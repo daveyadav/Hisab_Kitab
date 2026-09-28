@@ -730,6 +730,26 @@ function drivePayloadFor(email, descs) {
       c2.store['hisab_drive_dirty_ana@example.com'] === undefined);
   }
 
+  // B10d: the account modal shows an honest offline-readiness line
+  {
+    const c = makeContext();
+    c.sandbox.updateOfflineLine();
+    check('B10d offline line honest when SW unsupported',
+      /not supported/.test(c.$('#offline-ready').textContent), c.$('#offline-ready').textContent);
+    c.windowStub.navigator.serviceWorker = {
+      getRegistration: async () => ({ active: { state: 'activated' } }),
+    };
+    c.sandbox.updateOfflineLine();
+    await tick(50);
+    check('B10d offline line shows ready when a worker is active',
+      /ready ✓/.test(c.$('#offline-ready').textContent), c.$('#offline-ready').textContent);
+    c.windowStub.navigator.serviceWorker = { getRegistration: async () => null };
+    c.sandbox.updateOfflineLine();
+    await tick(50);
+    check('B10d offline line asks for one more online open when missing',
+      /not ready yet/.test(c.$('#offline-ready').textContent), c.$('#offline-ready').textContent);
+  }
+
   console.log('\n==== RESULT: ' + pass + ' passed, ' + fail + ' failed ====');
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error('HARNESS ERROR:', e); process.exit(2); });

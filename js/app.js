@@ -604,8 +604,28 @@ function openAccountMenu(focusNickname) {
     : 'Shown in greetings and the top bar. Leave empty to use “' + S.user.displayName + '”.';
   var rc = $('#account-reconnect');
   if (rc) rc.hidden = !(S.user.kind === 'google' && typeof Drive !== 'undefined' && Drive.getStatus() === 'reauth');
+  updateOfflineLine();
   openModal('#account-modal');
   if (focusNickname) setTimeout(function () { var i = $('#account-nickname'); if (i && i.focus) i.focus(); }, 260);
+}
+/* Honest offline indicator: tells whether this browser has the app shell
+ * installed, i.e. whether Hisab will open without internet. */
+function updateOfflineLine() {
+  var el = $('#offline-ready');
+  if (!el) return;
+  if (!('serviceWorker' in navigator)) {
+    el.textContent = 'Offline app: not supported by this browser.';
+    return;
+  }
+  el.textContent = 'Offline app: checking…';
+  navigator.serviceWorker.getRegistration().then(function (reg) {
+    var ready = !!(reg && (reg.active || reg.waiting || reg.installing));
+    el.textContent = ready
+      ? 'Offline app: ready ✓ — opens without internet.'
+      : 'Offline app: not ready yet — open it once more while online.';
+  }).catch(function () {
+    el.textContent = 'Offline app: not ready yet — open it once more while online.';
+  });
 }
 function closeAccountMenu() { closeModal('#account-modal'); }
 function handleNicknameSave(ev) {
