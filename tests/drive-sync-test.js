@@ -750,6 +750,42 @@ function drivePayloadFor(email, descs) {
       /not ready yet/.test(c.$('#offline-ready').textContent), c.$('#offline-ready').textContent);
   }
 
+  // B10e: the line never gets stuck on "checking…" when the registry is quiet
+  {
+    const c = makeContext();
+    let hang = true;
+    c.windowStub.navigator.serviceWorker = {
+      getRegistration: () => hang
+        ? new Promise(function () {})                       // never settles: slow/stuck installer
+        : Promise.resolve({ active: { state: 'activated' } }),
+      register: async () => ({ installing: { state: 'installing' } }),
+    };
+    c.sandbox.updateOfflineLine({ nudgeDelay: 30, recheckDelay: 30, deadlineDelay: 60 });
+    await tick(15);
+    check('B10e shows checking first',
+      /checking/.test(c.$('#offline-ready').textContent), c.$('#offline-ready').textContent);
+    await tick(40); // past the nudge delay
+    check('B10e nudges the installer instead of hanging',
+      /still setting up/.test(c.$('#offline-ready').textContent), c.$('#offline-ready').textContent);
+    hang = false; // registry answers again on the re-check
+    await tick(80);
+    check('B10e recovers to ready once the registry answers',
+      /ready ✓/.test(c.$('#offline-ready').textContent), c.$('#offline-ready').textContent);
+  }
+
+  // B10f: even if the registry never answers, the line lands honestly
+  {
+    const c = makeContext();
+    c.windowStub.navigator.serviceWorker = {
+      getRegistration: () => new Promise(function () {}),
+      register: async () => { throw new Error('denied'); },
+    };
+    c.sandbox.updateOfflineLine({ nudgeDelay: 30, recheckDelay: 30, deadlineDelay: 60 });
+    await tick(200);
+    check('B10f lands on not-ready instead of hanging forever',
+      /not ready yet/.test(c.$('#offline-ready').textContent), c.$('#offline-ready').textContent);
+  }
+
   console.log('\n==== RESULT: ' + pass + ' passed, ' + fail + ' failed ====');
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error('HARNESS ERROR:', e); process.exit(2); });

@@ -609,23 +609,51 @@ function openAccountMenu(focusNickname) {
   if (focusNickname) setTimeout(function () { var i = $('#account-nickname'); if (i && i.focus) i.focus(); }, 260);
 }
 /* Honest offline indicator: tells whether this browser has the app shell
- * installed, i.e. whether Hisab will open without internet. */
-function updateOfflineLine() {
+ * installed, i.e. whether Hisab will open without internet. The worker
+ * registry can stay quiet for a while on slow phones (an update installing
+ * in the background), so: nudge the installer once, re-check, and never
+ * leave the line stuck on "checking…". `opts` delays exist for tests. */
+function updateOfflineLine(opts) {
   var el = $('#offline-ready');
   if (!el) return;
   if (!('serviceWorker' in navigator)) {
     el.textContent = 'Offline app: not supported by this browser.';
     return;
   }
+  var d = opts || {};
+  var NUDGE_MS = d.nudgeDelay != null ? d.nudgeDelay : 4000;
+  var RECHECK_MS = d.recheckDelay != null ? d.recheckDelay : 3000;
+  var DEADLINE_MS = d.deadlineDelay != null ? d.deadlineDelay : 3000;
   el.textContent = 'Offline app: checking…';
-  navigator.serviceWorker.getRegistration().then(function (reg) {
-    var ready = !!(reg && (reg.active || reg.waiting || reg.installing));
-    el.textContent = ready
+  var done = false;
+  function finish(text) { if (!done) { done = true; el.textContent = text; } }
+  function report(reg) {
+    finish(reg && (reg.active || reg.waiting || reg.installing)
       ? 'Offline app: ready ✓ — opens without internet.'
-      : 'Offline app: not ready yet — open it once more while online.';
-  }).catch(function () {
-    el.textContent = 'Offline app: not ready yet — open it once more while online.';
-  });
+      : 'Offline app: not ready yet — open it once more while online.');
+  }
+  function check() {
+    var p = null;
+    try { p = navigator.serviceWorker.getRegistration(); } catch (e) { p = null; }
+    if (p && typeof p.then === 'function') p.then(report, function () { report(null); });
+    else report(null);
+  }
+  check();
+  setTimeout(function () {
+    if (done) return;
+    el.textContent = 'Offline app: still setting up — finishing the install…';
+    try {
+      var r = navigator.serviceWorker.register('sw.js');
+      if (r && typeof r.catch === 'function') r.catch(function () {});
+    } catch (e) { /* ignore: check() below will report honestly */ }
+    setTimeout(function () {
+      if (done) return;
+      check();
+      setTimeout(function () {
+        finish('Offline app: not ready yet — reopen it while online and check again.');
+      }, DEADLINE_MS);
+    }, RECHECK_MS);
+  }, NUDGE_MS);
 }
 function closeAccountMenu() { closeModal('#account-modal'); }
 function handleNicknameSave(ev) {
