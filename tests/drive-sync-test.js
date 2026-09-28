@@ -398,7 +398,7 @@ function drivePayloadFor(email, descs) {
     check('B6 sync pill hidden for local account', c.$('#sync-pill').hidden === true);
   }
 
-  // B7: boot with google session → auto-restore from cache, no auto-popup
+  // B7: boot with google session → auto-restore from cache, silent reconnect, no nag
   {
     const c = makeContext();
     c.store['hisab_session_v2'] = JSON.stringify({ kind: 'google', id: 'alice@gmail.com' });
@@ -407,16 +407,54 @@ function drivePayloadFor(email, descs) {
       { id: 'e1', ts: Date.now(), type: 'cash_purchase', desc: 'Cached momo', amount: 150, party: '', note: '' },
     ], business: [] });
     c.fireReady();
-    await tick(200);
+    await tick(900);
     check('B7 main view auto-opened on boot', c.$('#view-main').hidden === false);
     check('B7 restored as the same google user',
       c.sandbox.S.user && c.sandbox.S.user.kind === 'google' && c.sandbox.S.user.id === 'alice@gmail.com');
-    check('B7 no token request without user gesture', c.fake.tokenRequests.length === 0);
+    check('B7 silent token refresh attempted without user gesture',
+      c.fake.tokenRequests.length === 1 && c.fake.tokenRequests[0].prompt === 'none',
+      JSON.stringify(c.fake.tokenRequests));
+    check('B7 no "tap to reconnect" nag when silent refresh works',
+      !/reconnect/i.test(c.$('#sync-pill').innerHTML), c.$('#sync-pill').innerHTML);
     check('B7 cached entries visible',
       c.sandbox.S.entries.personal.some(e => e.desc === 'Cached momo'));
-    check('B7 sync pill asks to reconnect',
-      c.$('#sync-pill').hidden === false && /reconnect/i.test(c.$('#sync-pill').innerHTML),
-      c.$('#sync-pill').innerHTML);
+  }
+
+  // B7b: silent refresh fails → pill asks to reconnect only then
+  {
+    const c = makeContext();
+    c.fake.reauthShouldFail = true;
+    c.store['hisab_session_v2'] = JSON.stringify({ kind: 'google', id: 'ana@example.com' });
+    c.store['hisab_google_profile'] = JSON.stringify({ email: 'ana@example.com', name: 'Ana', picture: '' });
+    c.store['hisab_data_v2_g_ana@example.com'] = JSON.stringify({ personal: [
+      { id: 'e1', ts: Date.now(), type: 'cash_purchase', desc: 'Cached momo', amount: 150, party: '', note: '' },
+    ], business: [] });
+    c.fireReady();
+    await tick(900);
+    check('B7b silent refresh attempted first',
+      c.fake.tokenRequests.length === 1 && c.fake.tokenRequests[0].prompt === 'none',
+      JSON.stringify(c.fake.tokenRequests));
+    const pill = c.$('#sync-pill');
+    check('B7b sync pill asks to reconnect only after silent failure',
+      pill.hidden === false && /reconnect/i.test(pill.innerHTML), pill.innerHTML);
+    pill.click();
+    await tick(150);
+    check('B7b tapping triggers a visible reconnect, not another silent one',
+      c.fake.tokenRequests.length === 2 && c.fake.tokenRequests[1].prompt !== 'none',
+      JSON.stringify(c.fake.tokenRequests));
+  }
+
+  // B7c: entry rows show date + time clearly when asked (dashboard recent list)
+  {
+    const c = makeContext();
+    const e = { id: 'e1', ts: 1759100000000, type: 'cash_purchase', desc: 'Momo', amount: 150, party: 'Ramesh', note: '' };
+    const rowDated = c.sandbox.entryRow(e, true);
+    const rowPlain = c.sandbox.entryRow(e);
+    const expected = c.sandbox.fmtDateTime(e.ts);
+    check('B7c dated row shows full date + time',
+      rowDated.includes(expected) && /class="e-dt"/.test(rowDated), rowDated);
+    check('B7c plain row shows time only',
+      rowPlain.includes(c.sandbox.fmtTime(e.ts)) && !rowPlain.includes(expected), rowPlain);
   }
 
   // B8: local session survives a page reload (stays logged in)
