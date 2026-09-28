@@ -477,13 +477,31 @@ function boot() {
      * "Tap to reconnect" refreshes the Google token and resumes Drive sync. */
     var prof = Drive.readProfile();
     if (prof && prof.email) {
-      loginAs({ kind: 'google', id: String(prof.email).toLowerCase(),
-                displayName: prof.name || prof.email, picture: prof.picture || '' }, true);
-      if (!Drive.hasToken()) Drive.noteReauth();
+      restoreGoogleSession(prof);
       return;
     }
   }
   showView('login');
+}
+
+/* Restore a Google session from the local cache, then quietly refresh the
+ * Drive token in the background (Google's script loads async, so wait for
+ * it briefly). The "Tap to reconnect" pill only appears if Google genuinely
+ * needs a manual tap; when everything works the user never sees it. */
+function restoreGoogleSession(prof) {
+  loginAs({ kind: 'google', id: String(prof.email).toLowerCase(),
+            displayName: prof.name || prof.email, picture: prof.picture || '' }, true);
+  var tries = 0;
+  var timer = setInterval(function () {
+    if (Drive.gisLoaded() || ++tries > 20) {
+      clearInterval(timer);
+      if (Drive.gisLoaded()) {
+        Drive.silentReconnect().then(function (ok) { if (!ok) Drive.noteReauth(); });
+      }
+      /* If Google's script never arrived (offline), stay quiet: the queued
+       * Drive upload retries automatically when connectivity returns. */
+    }
+  }, 500);
 }
 
 function loginAs(user, quiet) {
@@ -1169,12 +1187,16 @@ function renderHeader() {
     '<span class="nm">' + esc(displayName()) + '</span>';
 }
 
-function entryRow(e) {
+function entryRow(e, showDate) {
   var t = TYPES[e.type] || TYPES.cash_purchase;
   var f = t.flow;
   var amtCls = (f === 'receivable+' || f === 'receivable-') ? 'in' : (f === 'cash' || f === 'payable+' ? 'out' : '');
   var sign = (f === 'payable-' || f === 'receivable-') ? '− ' : '';
-  var sub = fmtTime(e.ts) + (e.party ? ' · ' + esc(e.party) : '') + ' · ' + esc(t.short);
+  /* showDate: lists without a day header (e.g. dashboard "Recent entries")
+   * show the full date + time so nothing is hidden. */
+  var dt = showDate ? fmtDateTime(e.ts) : fmtTime(e.ts);
+  var sub = '<span class="e-dt">' + esc(dt) + '</span>' +
+    (e.party ? ' · ' + esc(e.party) : '') + ' · ' + esc(t.short);
   return '<button class="entry-row" data-id="' + e.id + '">' +
     '<span class="e-ico t-' + e.type + '">' + icon(t.icon) + '</span>' +
     '<span class="e-main"><span class="e-desc">' + esc(e.desc) + '</span>' +
@@ -1307,7 +1329,7 @@ function renderDashboard() {
   /* recent */
   var recent = list.slice().sort(function (a, b) { return b.ts - a.ts; }).slice(0, 5);
   var recentHTML = '<div class="span-12"><div class="section-title" style="margin:4px 4px 10px">Recent entries <button class="link" id="dash-all" type="button">View all</button></div>' +
-    '<div class="list-card">' + recent.map(entryRow).join('') + '</div></div>';
+    '<div class="list-card">' + recent.map(function (e) { return entryRow(e, true); }).join('') + '</div></div>';
 
   root.innerHTML = greet + nudge +
     '<div class="dash-grid">' + hero + position + kpis + flow + donut + people + weekday + hl + recentHTML + '</div>';
