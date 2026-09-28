@@ -715,11 +715,22 @@ function googleSignInFlow(hint) {
   });
 }
 
-/* Sync-status pill in the top bar (Google accounts only). */
+/* Sync-status pill in the top bar (Google accounts only).
+ * Writes to the DOM only when something actually changed: re-setting the
+ * class replays CSS animations and resizing the pill shoves the sticky
+ * header around, which reads as the page "shaking". */
+var _pillKey = null;
 function updateSyncPill(s) {
   var pill = $('#sync-pill');
   if (!pill) return;
-  if (!S.user || S.user.kind !== 'google' || s === 'disabled') { pill.hidden = true; pill.onclick = null; return; }
+  if (!S.user || S.user.kind !== 'google' || s === 'disabled') {
+    if (_pillKey === 'hidden') return;
+    _pillKey = 'hidden';
+    pill.hidden = true; pill.onclick = null; return;
+  }
+  var key = s + '|' + S.user.id;
+  if (key === _pillKey) return;
+  _pillKey = key;
   var map = {
     synced:  ['Synced ✓', 'ok'],
     syncing: ['Syncing…', 'busy'],
@@ -1340,8 +1351,6 @@ function renderDashboard() {
       S.period = b.getAttribute('data-v');
       saveStr(LS_PERIOD, S.period);
       renderDashboard();
-      var g = $('#tab-dashboard .dash-grid');
-      if (g) staggerIn(g);
     });
   });
   syncSegmented($('#period-switch'));
@@ -1418,7 +1427,6 @@ function renderEntries() {
       S.filterType = c.dataset.f;
       $all('#tab-entries .chip').forEach(function (x) { x.classList.toggle('active', x === c); });
       renderEntryList();
-      var l = $('#entries-list'); if (l) staggerIn(l);
     });
   });
 }
