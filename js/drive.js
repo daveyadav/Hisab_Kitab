@@ -33,7 +33,7 @@
   var G = (typeof window !== 'undefined') ? window
         : ((typeof globalThis !== 'undefined') ? globalThis : this);
 
-  var SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+     var SCOPE = 'openid email profile https://www.googleapis.com/auth/drive.appdata';
   var FILE_NAME = 'hisab-data.json';
   var LS_PROFILE = 'hisab_google_profile';
   var DEBOUNCE_MS = 2000;
