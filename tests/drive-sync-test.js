@@ -8,8 +8,8 @@
  * re-auth failure → 'reauth' status, signOut, local accounts untouched
  * by Drive, Google↔local account isolation, Google session auto-restore
  * from cache with no auto-popup on boot, quiet boot when silent refresh
- * fails (reconnect prompt only when a sync is actually due, at most one
- * save-triggered silent attempt per boot), reconnect preserving unsynced
+ * fails (calm "Waiting to sync" only when a sync is actually due, silent
+ * retries throttled in the background), reconnect preserving unsynced
  * local edits instead of the stale remote copy wiping them, local
  * session surviving reload.
  */
@@ -418,14 +418,14 @@ function drivePayloadFor(email, descs) {
     check('B7 silent token refresh attempted without user gesture',
       c.fake.tokenRequests.length === 1 && c.fake.tokenRequests[0].prompt === 'none',
       JSON.stringify(c.fake.tokenRequests));
-    check('B7 no "tap to reconnect" nag when silent refresh works',
+    check('B7 no nag when silent refresh works',
       !/reconnect/i.test(c.$('#sync-pill').innerHTML), c.$('#sync-pill').innerHTML);
     check('B7 cached entries visible',
       c.sandbox.S.entries.personal.some(e => e.desc === 'Cached momo'));
   }
 
-  // B7b: silent refresh fails at boot → NO nag; the pill asks to reconnect
-  // only when the user changes something that actually needs syncing
+  // B7b: silent refresh fails at boot → NO nag; a calm "Waiting to sync"
+  // appears only when the user changes something that actually needs syncing
   {
     const c = makeContext();
     c.fake.reauthShouldFail = true;
@@ -440,13 +440,13 @@ function drivePayloadFor(email, descs) {
       c.fake.tokenRequests.length === 1 && c.fake.tokenRequests[0].prompt === 'none',
       JSON.stringify(c.fake.tokenRequests));
     const pill = c.$('#sync-pill');
-    check('B7b no "tap to reconnect" nag at boot when silent fails',
-      pill.hidden === false && !/reconnect/i.test(pill.innerHTML), pill.innerHTML);
+    check('B7b no nag at boot when silent fails',
+      pill.hidden === false && !/waiting to sync/i.test(pill.innerHTML), pill.innerHTML);
     /* User adds an entry → now a sync is actually due → the pill may ask. */
     c.sandbox.addEntry({ ts: Date.now(), type: 'cash_purchase', desc: 'New chiya', amount: 80, party: '', note: '' });
     await tick(400);
-    check('B7b pill asks to reconnect only when a sync is due',
-      /reconnect/i.test(pill.innerHTML), pill.innerHTML);
+    check('B7b pill shows "Waiting to sync" only when a sync is due',
+      /waiting to sync/i.test(pill.innerHTML), pill.innerHTML);
     const reqsBeforeTap = c.fake.tokenRequests.length;
     c.fake.currentEmail = 'ana@example.com'; /* tap signs back into the same account */
     pill.click();
@@ -486,7 +486,7 @@ function drivePayloadFor(email, descs) {
       upDescs.includes('Cached momo') && upDescs.includes('Offline chiya'), upDescs.join(','));
   }
 
-  // B7e: save-triggered silent attempt happens only once per boot
+  // B7e: save-triggered silent attempts are throttled (5 min), not spammed
   {
     const c = makeContext();
     const Drive = c.windowStub.Drive;
@@ -495,15 +495,15 @@ function drivePayloadFor(email, descs) {
     check('B7e failed boot silent stays quiet (idle, no nag)', Drive.getStatus() === 'idle', Drive.getStatus());
     Drive.scheduleSave(() => drivePayloadFor('ana', ['One']));
     await tick(200);
-    const afterFirst = c.fake.tokenRequests.length;
-    check('B7e first save triggers one silent attempt then asks for tap',
-      afterFirst === 2 && Drive.getStatus() === 'reauth',
-      'reqs=' + afterFirst + ' status=' + Drive.getStatus());
+    check('B7e save inside the throttle window tries nothing new',
+      c.fake.tokenRequests.length === 1 && Drive.getStatus() === 'reauth',
+      'reqs=' + c.fake.tokenRequests.length + ' status=' + Drive.getStatus());
+    Drive._setLastSilentMs(Date.now() - 6 * 60 * 1000); /* pretend 6 min passed */
     Drive.scheduleSave(() => drivePayloadFor('ana', ['Two']));
     await tick(200);
-    check('B7e second save does not spam another silent attempt',
-      c.fake.tokenRequests.length === afterFirst,
-      'reqs=' + c.fake.tokenRequests.length + ' vs ' + afterFirst);
+    check('B7e save after the throttle window retries silently once more',
+      c.fake.tokenRequests.length === 2 && Drive.getStatus() === 'reauth',
+      'reqs=' + c.fake.tokenRequests.length + ' status=' + Drive.getStatus());
   }
 
   // B7c: entry rows show date + time clearly when asked (dashboard recent list)

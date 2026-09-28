@@ -32,9 +32,11 @@
  * Boot behaviour: the access token lives in memory only, so every fresh
  * page load starts without one. We try ONE silent refresh (no popup);
  * when the browser blocks it (e.g. third-party cookies off — common on
- * phones) we stay quiet on "Ready" instead of nagging. The "Tap to
- * reconnect" prompt appears only when the user changes something that
- * really needs Drive and the silent attempt fails then.
+ * phones) we stay quiet on "Ready" instead of nagging. The "Waiting to
+ * sync" prompt appears only when the user changes something that really
+ * needs Drive and the silent attempt fails then — it never demands a
+ * tap, it just waits; background retries (coming online, reopening the
+ * app, throttled while open) keep trying silently on their own.
  * ========================================================================= */
 'use strict';
 
@@ -62,8 +64,9 @@
    * working from the local cache; a tap is asked for only when a Drive
    * sync is actually due. Cleared by any fresh token. */
   var reauthNeeded = false;
-  /* One save-triggered silent attempt per boot — never spam Google. */
-  var saveSilentTried = false;
+  /* Quiet background retries, at most this often — never spam Google. */
+  var SILENT_RETRY_MS = 5 * 60 * 1000;
+  var lastSilentMs = 0;
   /* Account email used as login_hint for silent requests. */
   var loginHint = null;
   /* Local edits made while Drive had no token (not yet confirmed there). */
@@ -293,11 +296,11 @@
       /* Not signed in with Google right now — nothing to sync yet.
        * When Google needs a tap (reauthNeeded), ask for it only now that
        * there is actually something to upload: one quiet silent attempt
-       * first, then the "Tap to reconnect" prompt. */
+       * first, then the "Waiting to sync" state. */
       if (!online()) { setStatus('offline'); dirtyWhileOffline = true; return; }
       if (reauthNeeded) {
-        if (!saveSilentTried) {
-          saveSilentTried = true;
+        if (Date.now() - lastSilentMs >= SILENT_RETRY_MS) {
+          lastSilentMs = Date.now();
           setStatus('syncing');
           requestToken('none', loginHint).then(function (err) {
             if (err || !accessToken) { setStatus('reauth'); return; }
@@ -357,6 +360,7 @@
       return Promise.resolve(true);
     }
     if (hint) loginHint = hint;
+    lastSilentMs = Date.now();
     setStatus('syncing');
     return requestToken('none', loginHint).then(function (err) {
       if (err) {
@@ -370,18 +374,29 @@
     });
   }
 
-  /* Retry pending uploads when the browser comes back online. If the only
-   * thing missing is the token, take one more quiet silent shot — this
-   * lets the app reconnect by itself when connectivity returns. */
+  /* Retry pending uploads when the browser comes back online, or when the
+   * app is reopened after being in the background. If the only thing
+   * missing is the token, take another quiet silent shot — this lets the
+   * app reconnect by itself whenever Google allows it. */
+  function backgroundRetry() {
+    if (reauthNeeded && !accessToken && unsyncedChanges &&
+        gisLoaded() && configured() &&
+        Date.now() - lastSilentMs >= SILENT_RETRY_MS) {
+      silentReconnect().then(function (ok) {
+        if (ok) { dirtyWhileOffline = false; if (payloadProvider) scheduleSave(); }
+      });
+    }
+  }
   if (typeof G.addEventListener === 'function') {
     G.addEventListener('online', function () {
       if (dirtyWhileOffline && accessToken) { dirtyWhileOffline = false; scheduleSave(); }
-      else if (reauthNeeded && !accessToken && gisLoaded() && configured()) {
-        silentReconnect().then(function (ok) {
-          if (ok) { dirtyWhileOffline = false; if (payloadProvider) scheduleSave(); }
-        });
-      }
+      else backgroundRetry();
     });
+    if (G.document && typeof G.document.addEventListener === 'function') {
+      G.document.addEventListener('visibilitychange', function () {
+        if (G.document.visibilityState === 'visible') backgroundRetry();
+      });
+    }
   }
 
   /* ---------------- profile persistence (for "Continue as …") ---------------- */
@@ -411,7 +426,7 @@
     payloadProvider = null;
     dirtyWhileOffline = false;
     reauthNeeded = false;
-    saveSilentTried = false;
+    lastSilentMs = 0;
     loginHint = null;
     unsyncedChanges = false;
     clearProfile();
@@ -444,11 +459,12 @@
     writeProfile: writeProfile,
     /* test helpers */
     _setDebounceMs: function (ms) { DEBOUNCE_MS = ms; },
+    _setLastSilentMs: function (ms) { lastSilentMs = ms; },
     _reset: function () {
       if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
       tokenClient = null; accessToken = null; fileId = null;
       payloadProvider = null; dirtyWhileOffline = false; pendingResolve = null;
-      reauthNeeded = false; saveSilentTried = false; loginHint = null;
+      reauthNeeded = false; lastSilentMs = 0; loginHint = null;
       unsyncedChanges = false;
       statusListeners = []; status = 'disabled';
     }

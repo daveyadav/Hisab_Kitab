@@ -488,8 +488,9 @@ function boot() {
 /* Restore a Google session from the local cache, then quietly refresh the
  * Drive token in the background (Google's script loads async, so wait for
  * it briefly). If the silent refresh fails, Drive stays quiet — the app
- * works from the cache and the "Tap to reconnect" pill appears only when
- * the user changes something that actually needs syncing. */
+ * works from the cache and a calm "Waiting to sync" pill appears only when
+ * the user changed something that actually needs syncing (tapping it is
+ * optional — the app keeps retrying quietly on its own). */
 function restoreGoogleSession(prof) {
   loginAs({ kind: 'google', id: String(prof.email).toLowerCase(),
             displayName: prof.name || prof.email, picture: prof.picture || '' }, true);
@@ -750,7 +751,7 @@ function updateSyncPill(s) {
     synced:  ['Synced ✓', 'ok'],
     syncing: ['Syncing…', 'busy'],
     offline: ['Offline — will sync', 'warn'],
-    reauth:  ['Tap to reconnect', 'bad'],
+    reauth:  ['Waiting to sync', 'warn'],
     error:   ['Sync error — will retry', 'bad'],
     idle:    ['Ready', '']
   };
