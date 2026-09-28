@@ -636,3 +636,82 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
 .row2 input{min-width:0}
 input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 input[type=number]{-moz-appearance:textfield;appearance:textfield}
+
+/* =========================================================================
+ * Print / Save as PDF — statement options sheet + the printed statement.
+ * The statement lives in #print-root, hidden on screen. When the user
+ * prints, body.print-report swaps the app out for the statement.
+ * ========================================================================= */
+select.field{
+  appearance:none;-webkit-appearance:none;padding-right:40px;cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237f8b86' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 14px center;background-size:18px;
+}
+.check-list{display:flex;flex-direction:column;margin:2px 0 10px;padding:2px 14px;border:1.5px solid var(--line);border-radius:14px;background:var(--surface-2)}
+.sheet label.check{display:flex;align-items:center;gap:12px;margin:0;padding:11px 0;font-weight:600;color:var(--ink);cursor:pointer}
+.sheet label.check + label.check{border-top:1px solid var(--line-2)}
+.sheet .check input{width:20px;height:20px;min-height:0;margin:0;padding:0;flex:none;accent-color:var(--accent);cursor:pointer}
+#r-count{margin:0 2px 6px;font-weight:650;color:var(--ink-2)}
+.link-btn svg{width:15px;height:15px;vertical-align:-3px;margin-right:4px}
+.sl-left{display:inline-flex;align-items:center;gap:12px}
+
+#print-root{display:none}
+@media print{
+  @page{
+    size:A4;margin:12mm 11mm 14mm;
+    @bottom-right{content:"Page " counter(page) " of " counter(pages);font-size:8pt;color:#7f8b86}
+  }
+  body.print-report{background:#fff!important;background-image:none!important;color:#111b18}
+  body.print-report #app{display:none!important}
+  body.print-report #print-root{display:block!important}
+}
+
+.rp{font-family:var(--font);color:#111b18;background:#fff;font-size:9.5pt;line-height:1.4;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.rp *{box-sizing:border-box}
+.rp h1,.rp h2,.rp h3{letter-spacing:0;color:inherit}
+.rp small{display:block;font-size:.84em;color:#6b7772;font-weight:400}
+.rp-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;padding-bottom:10px;border-bottom:2.5px solid #0b7d65}
+.rp-brand{display:flex;align-items:center;gap:10px}
+.rp-brand img{width:38px;height:38px;display:block}
+.rp-brand b{display:block;font-size:15pt;line-height:1.1}
+.rp-brand span{font-size:7.5pt;color:#6b7772;text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+.rp-title{text-align:right}
+.rp-title h1{margin:0;font-size:14pt;font-weight:800}
+.rp-title p{margin:2px 0 0;color:#44534e;font-weight:600}
+.rp-meta{display:grid;grid-template-columns:1.3fr .7fr 1fr 1.2fr;gap:8px 14px;margin:12px 0 0;padding:10px 12px;background:#f5f3ee;border-radius:8px}
+.rp-meta dt{font-size:7pt;text-transform:uppercase;letter-spacing:.07em;color:#6b7772;font-weight:700}
+.rp-meta dd{margin:2px 0 0;font-weight:650;word-break:break-word}
+.rp-sec{margin-top:16px}
+.rp-sec h2{font-size:10pt;font-weight:800;margin:0 0 8px;text-transform:uppercase;letter-spacing:.06em;color:#075e4c}
+.rp-sec h2 small{display:inline;margin-left:6px;text-transform:none;letter-spacing:0;font-weight:600}
+.rp-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.rp-tile{border:1px solid #e3ddd1;border-radius:8px;padding:7px 10px;break-inside:avoid}
+.rp-tile span{font-size:7pt;text-transform:uppercase;letter-spacing:.06em;color:#6b7772;font-weight:700}
+.rp-tile b{display:block;font-size:12.5pt;font-variant-numeric:tabular-nums;margin-top:1px}
+.rp-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.rp-table thead{display:table-header-group}
+.rp-table tfoot{display:table-row-group}
+.rp-table tr{break-inside:avoid}
+.rp-table th{font-size:7pt;text-transform:uppercase;letter-spacing:.05em;color:#44534e;text-align:left;background:#f1eee7;padding:6px 7px;border-bottom:1px solid #d9d2c4;font-weight:800}
+.rp-table td{padding:5px 7px;border-bottom:1px solid #ece7dd;vertical-align:top}
+.rp-table .n{text-align:right;white-space:nowrap}
+.rp-table .d{white-space:nowrap}
+.rp-table td.o{color:#b3412c}
+.rp-table td.i{color:#0b7d65}
+.rp-table tfoot td{font-weight:800;border-top:1.5px solid #111b18;border-bottom:0;padding-top:7px;color:#111b18}
+.rp-table tr.zero td{color:#a3aba7}
+.rp-table tr.rp-open td{background:#faf8f4;font-style:italic}
+.rp-table .rb{font-weight:700}
+.rp-table .rb small{font-style:normal}
+.rp-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:1px}
+.rp-dot.t1{background:#2a78d6} .rp-dot.t2{background:#eb6834} .rp-dot.t3{background:#1baf7a}
+.rp-dot.t4{background:#eda100} .rp-dot.t5{background:#e87ba4} .rp-dot.t6{background:#008300}
+.rp-bal{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.rp-bal h3{font-size:8.5pt;font-weight:800;margin:0 0 4px}
+.rp-net{margin:10px 0 0;padding:8px 10px;border:1px dashed #cfc7b8;border-radius:8px;display:flex;justify-content:space-between;font-weight:650}
+.rp-empty{color:#6b7772;margin:4px 0;font-style:italic}
+.rp-mute{color:#a3aba7}
+.rp-keep{break-inside:avoid}
+.rp-sign{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin-top:44px;break-inside:avoid}
+.rp-sign div{border-top:1px solid #111b18;padding-top:5px;font-size:8.5pt;color:#44534e}
+.rp-foot{margin-top:18px;padding-top:8px;border-top:1px solid #e3ddd1;font-size:7.5pt;color:#6b7772}
