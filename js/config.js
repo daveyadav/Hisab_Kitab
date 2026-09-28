@@ -31,5 +31,5 @@
  * button stays disabled and the app works in device-only mode.
  * ========================================================================= */
 window.HISAB_CONFIG = {
-  GOOGLE_CLIENT_ID: 'PASTE_YOUR_CLIENT_ID_HERE'
+  GOOGLE_CLIENT_ID: '434056557055-f71840fi74pdhpevl5fvdllilt2jt1fq.apps.googleusercontent.com'
 };
