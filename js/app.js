@@ -136,7 +136,8 @@ var ICONS = {
   arrowOut:'<path d="M7 17L17 7"/><path d="M8 7h9v9"/>',
   arrowIn: '<path d="M17 7L7 17"/><path d="M16 17H7V8"/>',
   pulse:   '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
-  hash:    '<path d="M5 9h14M5 15h14M10 4L8 20M16 4l-2 16"/>'
+  hash:    '<path d="M5 9h14M5 15h14M10 4L8 20M16 4l-2 16"/>',
+  printer: '<path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/>'
 };
 function icon(name, cls) {
   return '<svg class="' + (cls || '') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICONS[name] || '') + '</svg>';
@@ -440,6 +441,7 @@ function boot() {
   $('#fab').innerHTML = icon('plus');
   $('#entry-close').innerHTML = icon('x');
   $('#account-close').innerHTML = icon('x');
+  $('#report-close').innerHTML = icon('x');
   var navIcons = { dashboard: 'chart', entries: 'list', balances: 'swap', more: 'dots' };
   $all('.nav-btn').forEach(function (b) {
     $('.nav-ico', b).innerHTML = icon(navIcons[b.dataset.tab]);
@@ -499,6 +501,7 @@ function logout() {
   try { localStorage.removeItem(LS_SESSION); } catch (e) {}
   S.user = null;
   S.profile = { nickname: '', dismissedNudge: false };
+  clearPrintedReport();
   $('#login-username').value = '';
   $('#login-password').value = '';
   $('#login-error').hidden = true;
@@ -1399,7 +1402,8 @@ function renderEntryList() {
     if (!groups[k]) { groups[k] = []; order.push(k); }
     groups[k].push(e);
   });
-  var html = '<div class="summary-line"><span class="muted">' + list.length + ' entr' + (list.length === 1 ? 'y' : 'ies') + '</span>' +
+  var html = '<div class="summary-line"><span class="sl-left"><span class="muted">' + list.length + ' entr' + (list.length === 1 ? 'y' : 'ies') + '</span>' +
+    (list.length ? '<button class="link-btn" id="entries-print" type="button">' + icon('printer') + 'Print</button>' : '') + '</span>' +
     '<span class="total">Total ' + fmtRs(t.gross) + '</span></div>';
   if (!list.length) {
     html += portalEntries().length
@@ -1417,6 +1421,8 @@ function renderEntryList() {
   var box = $('#entries-list');
   box.innerHTML = html;
   bindEntryRows(box);
+  var pb = $('#entries-print');
+  if (pb && list.length) pb.addEventListener('click', function () { openReportModal(reportPresetFromEntries()); });
 }
 
 /* ---- balances ---- */
@@ -1441,7 +1447,8 @@ function renderBalances() {
       '<span class="bal ' + cls + '">' + fmtRs(amount) + '</span>' + icon('chev', 'chev') + '</button>';
   }
 
-  var html = '<div class="panel position"><div class="panel-head"><div><h3>' + esc(portalName()) + ' balances</h3><p>Everyone you have open accounts with</p></div></div>' +
+  var html = '<div class="panel position"><div class="panel-head"><div><h3>' + esc(portalName()) + ' balances</h3><p>Everyone you have open accounts with</p></div>' +
+      (list.length ? '<button class="link-btn" id="balances-print" type="button">' + icon('printer') + 'Print</button>' : '') + '</div>' +
       '<div class="nums"><div><div class="k">I owe · total</div><div class="v neg" data-count="' + totOwe + '">' + fmtRs(totOwe) + '</div></div>' +
       '<div style="text-align:right"><div class="k">Owed to me · total</div><div class="v pos" data-count="' + totOwed + '">' + fmtRs(totOwed) + '</div></div></div>' +
       '<div class="split">' + (totOwe ? '<i style="width:' + owePct + '%;background:var(--neg)"></i>' : '') +
@@ -1456,6 +1463,8 @@ function renderBalances() {
 
   var root = $('#tab-balances');
   root.innerHTML = html;
+  var bp = $('#balances-print');
+  if (bp && list.length) bp.addEventListener('click', function () { openReportModal({ period: 'all' }); });
   $all('#tab-balances .party-card').forEach(function (c) {
     c.addEventListener('click', function () {
       S.filterQ = c.dataset.party; S.filterType = 'all'; S.tab = 'entries'; renderAll(true);
@@ -1477,6 +1486,11 @@ function renderMore() {
     '<div class="card menu-card"><div class="menu-row"><span class="lbl">Theme</span>' +
       segmentedHTML('theme-switch', [{ v: 'system', label: 'Auto', icon: 'monitor' }, { v: 'light', label: 'Light', icon: 'sun' }, { v: 'dark', label: 'Dark', icon: 'moon' }], getTheme(), 'sm') +
     '</div></div>' +
+
+    '<div class="section-title">Print &amp; PDF</div>' +
+    '<div class="card menu-card">' +
+      '<button class="menu-item" id="m-print"><span class="mi">' + icon('printer') + '</span><span>Print or save as PDF<span class="sub">A clean statement for any period, person or entry type</span></span>' + icon('chev', 'chev') + '</button>' +
+    '</div>' +
 
     '<div class="section-title">Backup — keeps your data safe</div>' +
     '<div class="card menu-card">' +
@@ -1510,6 +1524,7 @@ function renderMore() {
     });
   });
   syncSegmented($('#theme-switch'));
+  $('#m-print').addEventListener('click', function () { openReportModal(); });
   $('#m-export').addEventListener('click', exportBackup);
   $('#m-import').addEventListener('click', function () { $('#import-file').click(); });
   $('#m-sample').addEventListener('click', loadSampleData);
@@ -1617,6 +1632,327 @@ function loadSampleData() {
     });
 }
 
+/* =========================================================================
+ * Print / Save as PDF — account statements
+ *
+ * Builds a clean, always-light, A4 statement into #print-root and opens
+ * the browser's own print dialog: "Save as PDF" there gives a PDF file,
+ * a printer prints it. No PDF library — the browser does the rendering.
+ *
+ * While a statement is armed (body.print-report), print CSS shows only
+ * #print-root. It stays armed until logout on purpose: Android Chrome can
+ * render its print preview after window.print() has already returned, so
+ * tearing it down on 'afterprint' could print the app instead.
+ * ========================================================================= */
+var REPORT_PERIODS = {
+  month: 'This month', lastmonth: 'Last month', '30d': 'Last 30 days',
+  '3m': 'Last 3 months', year: 'This year', all: 'All time', custom: 'Custom dates'
+};
+/* Last-used statement options (kept for the session). */
+var RPT = { portal: 'personal', period: 'month', from: '', to: '', party: '', type: 'all', q: '',
+            summary: true, balances: true, sign: false };
+var _dtfDay = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, day: 'numeric', month: 'short', year: 'numeric' });
+function fmtDay(ts) { return _dtfDay.format(ts); }            // "28 Sept 2026"
+var _titleBeforePrint = null;
+
+/* Period -> { start, end (exclusive), first, last, label, name } on the Kathmandu calendar. */
+function reportRange(o) {
+  var today = todayKey(), t0 = dayStart(today), mk = thisMonthKey();
+  var r = { start: null, end: null };
+  if (o.period === 'month') { r.start = dayStart(mk + '-01'); r.end = t0 + DAY; }
+  else if (o.period === 'lastmonth') { r.start = dayStart(shiftMonth(mk, -1) + '-01'); r.end = dayStart(mk + '-01'); }
+  else if (o.period === '30d') { r.start = t0 - 29 * DAY; r.end = t0 + DAY; }
+  else if (o.period === '3m') { r.start = dayStart(shiftMonth(mk, -2) + '-01'); r.end = t0 + DAY; }
+  else if (o.period === 'year') { r.start = dayStart(today.slice(0, 4) + '-01-01'); r.end = t0 + DAY; }
+  else if (o.period === 'custom') {
+    var re = /^\d{4}-\d{2}-\d{2}$/;
+    var f = re.test(o.from) ? o.from : '', t = re.test(o.to) ? o.to : '';
+    if (!f && !t) return { error: 'Pick a From or To date for the custom period.' };
+    if (f && t && f > t) { var sw = f; f = t; t = sw; }
+    r.start = f ? dayStart(f) : null;
+    r.end = t ? dayStart(t) + DAY : null;
+  }
+  /* Open-ended sides borrow the first / last entry (or today) for the label. */
+  var first = r.start, last = r.end != null ? r.end - 1 : Date.now();
+  (S.entries[o.portal] || []).forEach(function (e) {
+    if (o.party && e.party !== o.party) return;
+    if (r.start == null && (first == null || e.ts < first)) first = e.ts;
+    if (r.end == null && e.ts > last) last = e.ts;
+  });
+  r.first = first; r.last = last;
+  r.label = (first != null ? fmtDay(first) : 'Start') + ' – ' + fmtDay(last);
+  r.name = REPORT_PERIODS[o.period] || 'All time';
+  return r;
+}
+function reportMatches(e, o) {
+  if (o.party && e.party !== o.party) return false;
+  if (o.type !== 'all' && e.type !== o.type) return false;
+  var q = String(o.q || '').trim().toLowerCase();
+  if (q && (e.desc || '').toLowerCase().indexOf(q) === -1 &&
+      (e.party || '').toLowerCase().indexOf(q) === -1 &&
+      (e.note || '').toLowerCase().indexOf(q) === -1) return false;
+  return true;
+}
+function reportRows(o, r) {
+  return (S.entries[o.portal] || []).filter(function (e) {
+    return (r.start == null || e.ts >= r.start) && (r.end == null || e.ts < r.end) && reportMatches(e, o);
+  }).sort(function (a, b) { return a.ts - b.ts; });
+}
+/* Running balance with one person: + they owe me more, − I owe them more. */
+function balanceEffect(e) {
+  var f = TYPES[e.type] ? TYPES[e.type].flow : 'cash';
+  if (f === 'receivable+' || f === 'payable-') return e.amount;
+  if (f === 'receivable-' || f === 'payable+') return -e.amount;
+  return 0;
+}
+function balanceWords(n) {
+  if (!n) return 'Settled';
+  return fmtRs(Math.abs(n)) + '<small>' + (n > 0 ? 'owes you' : 'you owe') + '</small>';
+}
+var TYPE_EFFECT = {
+  cash_purchase: 'Money out', due_purchase: 'On due — I owe',
+  money_given: 'Money out — they owe me', money_taken: 'Money in — I owe',
+  paid_back: 'Money out — I owe less', received_back: 'Money in — they owe less'
+};
+
+function buildReportHTML(o, r) {
+  var rows = reportRows(o, r);
+  var st = blankStats(), cnt = {};
+  TYPE_ORDER.forEach(function (k) { cnt[k] = 0; });
+  rows.forEach(function (e) { addToStats(st, e); if (cnt[e.type] != null) cnt[e.type]++; });
+  var portal = o.portal === 'business' ? 'Business' : 'Personal';
+  var q = String(o.q || '').trim();
+  var running = !!(o.party && o.type === 'all' && !q);
+  var sub = S.user.kind === 'google' ? S.user.id : (S.profile.nickname ? '@' + S.user.displayName : 'Device-only account');
+  var filters = [];
+  if (o.party) filters.push('Person / shop: <b>' + esc(o.party) + '</b>');
+  if (o.type !== 'all') filters.push('Type: <b>' + esc(TYPES[o.type].label) + '</b>');
+  if (q) filters.push('Contains: <b>“' + esc(q) + '”</b>');
+
+  /* header */
+  var html = '<article class="rp">' +
+    '<header class="rp-head"><div class="rp-brand"><img src="assets/logo.svg" alt="" width="38" height="38"><div><b>Hisab</b><span>Khata book</span></div></div>' +
+    '<div class="rp-title"><h1>' + (o.party ? 'Account statement' : esc(portal) + ' khata statement') + '</h1>' +
+    '<p>' + (o.party ? esc(o.party) + ' · ' : '') + esc(r.label) + '</p></div></header>' +
+    '<dl class="rp-meta">' +
+      '<div><dt>Account</dt><dd>' + esc(displayName()) + '<small>' + esc(sub) + '</small></dd></div>' +
+      '<div><dt>Khata</dt><dd>' + esc(portal) + '</dd></div>' +
+      '<div><dt>Period</dt><dd>' + esc(r.name) + '<small>' + esc(r.label) + '</small></dd></div>' +
+      '<div><dt>Filters</dt><dd>' + (filters.length ? filters.join('<br>') : 'None — every entry') + '</dd></div>' +
+    '</dl>';
+
+  /* summary */
+  if (o.summary) {
+    var netFlow = st.in - st.out;
+    var tile = function (k, v, s) {
+      return '<div class="rp-tile"><span>' + k + '</span><b>' + v + '</b>' + (s ? '<small>' + s + '</small>' : '') + '</div>';
+    };
+    html += '<section class="rp-sec rp-keep"><h2>Summary</h2><div class="rp-tiles">' +
+      tile('Money out', fmtRs(st.out), 'Cash paid, given or paid back') +
+      tile('Money in', fmtRs(st.in), 'Cash taken or received back') +
+      tile('Net cash flow', (netFlow > 0 ? '+' : '') + fmtRs(netFlow), netFlow > 0 ? 'More came in than went out' : netFlow < 0 ? 'More went out than came in' : 'In and out are equal') +
+      tile('Bought on due', fmtRs(st.byType.due_purchase), 'Purchases made on credit') +
+      tile('Spent on purchases', fmtRs(st.spent), 'Cash + on due') +
+      tile('Entries', fmtNum(st.count), '') +
+      '</div>' +
+      '<table class="rp-table"><thead><tr><th>Type</th><th class="n">Entries</th><th class="n">Amount</th><th>Effect</th></tr></thead><tbody>' +
+      TYPE_ORDER.map(function (k) {
+        return '<tr' + (cnt[k] ? '' : ' class="zero"') + '><td><i class="rp-dot ' + TYPES[k].color + '"></i>' + esc(TYPES[k].label) + '</td>' +
+          '<td class="n">' + cnt[k] + '</td><td class="n">' + fmtRs(st.byType[k]) + '</td><td>' + esc(TYPE_EFFECT[k]) + '</td></tr>';
+      }).join('') +
+      '</tbody><tfoot><tr><td>Total</td><td class="n">' + st.count + '</td><td class="n">' + fmtRs(st.volume) + '</td><td></td></tr></tfoot></table></section>';
+  }
+
+  /* entries — oldest first, one amount column per cash effect */
+  html += '<section class="rp-sec"><h2>Entries<small>' + rows.length + ' · oldest first · amounts in Rs</small></h2>';
+  if (!rows.length) {
+    html += '<p class="rp-empty">No entries match this period and these filters.</p>';
+  } else {
+    var lead = o.party ? 3 : 4;   // columns before the amount columns
+    var bal = 0;
+    if (running && r.start != null) {
+      (S.entries[o.portal] || []).forEach(function (e) { if (e.party === o.party && e.ts < r.start) bal += balanceEffect(e); });
+    }
+    html += '<table class="rp-table"><thead><tr><th class="d">Date</th><th>Particulars</th>' + (o.party ? '' : '<th>Person / shop</th>') +
+      '<th>Type</th><th class="n">Money out</th><th class="n">Money in</th><th class="n">On due</th>' + (running ? '<th class="n">Balance</th>' : '') + '</tr></thead><tbody>';
+    if (running && r.start != null) {
+      html += '<tr class="rp-open"><td colspan="' + (lead + 3) + '">Opening balance before ' + esc(fmtDay(r.start)) + '</td><td class="n rb">' + balanceWords(bal) + '</td></tr>';
+    }
+    var tot = { o: 0, i: 0, d: 0 };
+    rows.forEach(function (e) {
+      var col = IS_OUT[e.type] ? 'o' : IS_IN[e.type] ? 'i' : 'd';
+      tot[col] += e.amount;
+      bal += balanceEffect(e);
+      var note = (e.note && e.note !== 'sample') ? '<small>' + esc(e.note) + '</small>' : '';
+      html += '<tr><td class="d">' + esc(fmtDay(e.ts)) + '<small>' + esc(fmtTime(e.ts)) + '</small></td>' +
+        '<td>' + esc(e.desc) + note + '</td>' +
+        (o.party ? '' : '<td>' + (e.party ? esc(e.party) : '<span class="rp-mute">—</span>') + '</td>') +
+        '<td>' + esc((TYPES[e.type] || TYPES.cash_purchase).label) + '</td>' +
+        '<td class="n o">' + (col === 'o' ? fmtNum(e.amount) : '') + '</td>' +
+        '<td class="n i">' + (col === 'i' ? fmtNum(e.amount) : '') + '</td>' +
+        '<td class="n">' + (col === 'd' ? fmtNum(e.amount) : '') + '</td>' +
+        (running ? '<td class="n rb">' + balanceWords(bal) + '</td>' : '') + '</tr>';
+    });
+    html += '</tbody><tfoot><tr><td colspan="' + lead + '">Total · ' + rows.length + ' entr' + (rows.length === 1 ? 'y' : 'ies') + '</td>' +
+      '<td class="n">' + fmtNum(tot.o) + '</td><td class="n">' + fmtNum(tot.i) + '</td><td class="n">' + fmtNum(tot.d) + '</td>' +
+      (running ? '<td class="n rb">' + balanceWords(bal) + '</td>' : '') + '</tr></tfoot></table>';
+  }
+  html += '</section>';
+
+  /* outstanding balances as of the period end (all entry types) */
+  if (o.balances) {
+    var upto = (S.entries[o.portal] || []).filter(function (e) {
+      return (r.end == null || e.ts < r.end) && (!o.party || e.party === o.party);
+    });
+    var b = computeBalances(upto), owe = [], owed = [];
+    Object.keys(b).forEach(function (k) {
+      if (b[k].payable > 0) owe.push(b[k]);
+      if (b[k].receivable > 0) owed.push(b[k]);
+    });
+    owe.sort(function (x, y) { return y.payable - x.payable; });
+    owed.sort(function (x, y) { return y.receivable - x.receivable; });
+    var totOwe = owe.reduce(function (s, x) { return s + x.payable; }, 0);
+    var totOwed = owed.reduce(function (s, x) { return s + x.receivable; }, 0);
+    var net = totOwed - totOwe;
+    var balTable = function (title, list, key, total) {
+      if (!list.length) return '<div><h3>' + title + '</h3><p class="rp-empty">Nothing</p></div>';
+      return '<div><h3>' + title + '</h3><table class="rp-table"><thead><tr><th>Name</th><th class="n">Amount</th></tr></thead><tbody>' +
+        list.map(function (p) { return '<tr><td>' + esc(p.party) + '</td><td class="n">' + fmtRs(p[key]) + '</td></tr>'; }).join('') +
+        '</tbody><tfoot><tr><td>Total</td><td class="n">' + fmtRs(total) + '</td></tr></tfoot></table></div>';
+    };
+    html += '<section class="rp-sec rp-keep"><h2>Outstanding balances<small>as of ' + esc(fmtDay(r.last)) + ' · all entry types</small></h2>';
+    if (!owe.length && !owed.length) {
+      html += '<p class="rp-empty">' + (o.party ? esc(o.party) + ' is settled' : 'Everyone is settled') + ' — nothing owed either way.</p>';
+    } else {
+      html += '<div class="rp-bal">' + balTable('I owe · payables', owe, 'payable', totOwe) + balTable('Owed to me · receivables', owed, 'receivable', totOwed) + '</div>' +
+        '<p class="rp-net"><span>' + (net === 0 ? 'All square' : net > 0 ? 'Net, others owe you' : 'Net, you owe others') + '</span><b>' + fmtRs(Math.abs(net)) + '</b></p>';
+    }
+    html += '</section>';
+  }
+
+  if (o.sign) html += '<div class="rp-sign"><div>Prepared by</div><div>Checked by</div><div>Date</div></div>';
+  html += '<footer class="rp-foot">Printed from Hisab on ' + esc(fmtDateTime(Date.now())) + ' (Nepal time) · Amounts in Nepali rupees</footer></article>';
+  return html;
+}
+
+/* Browsers use the page title as the suggested PDF file name. */
+function reportFileTitle(o, r) {
+  var parts = ['Hisab', o.portal === 'business' ? 'Business' : 'Personal'];
+  if (o.party) parts.push(o.party);
+  parts.push('statement', (r.first != null ? dateKey(r.first) : 'start') + ' to ' + dateKey(r.last));
+  return parts.join(' - ').replace(/[\\/:*?"<>|]+/g, ' ');
+}
+
+/* Options sheet */
+function fillReportParties() {
+  var seen = {}, names = [];
+  (S.entries[RPT.portal] || []).forEach(function (e) {
+    if (e.party && !seen[e.party]) { seen[e.party] = 1; names.push(e.party); }
+  });
+  names.sort(function (a, b) { return a.localeCompare(b); });
+  if (RPT.party && !seen[RPT.party]) RPT.party = '';
+  var sel = $('#r-party');
+  sel.innerHTML = '<option value="">Everyone</option>' + names.map(function (n) {
+    return '<option value="' + esc(n) + '">' + esc(n) + '</option>';
+  }).join('');
+  sel.value = RPT.party;
+}
+function readReportForm() {
+  RPT.portal = $('#r-portal').value === 'business' ? 'business' : 'personal';
+  RPT.period = REPORT_PERIODS[$('#r-period').value] ? $('#r-period').value : 'month';
+  RPT.from = $('#r-from').value || '';
+  RPT.to = $('#r-to').value || '';
+  RPT.party = $('#r-party').value || '';
+  RPT.type = TYPES[$('#r-type').value] ? $('#r-type').value : 'all';
+  RPT.q = $('#r-q').value || '';
+  RPT.summary = !!$('#r-summary').checked;
+  RPT.balances = !!$('#r-balances').checked;
+  RPT.sign = !!$('#r-sign').checked;
+}
+function updateReportUI() {
+  $('#r-custom').hidden = RPT.period !== 'custom';
+  var hint = $('#r-count'), r = reportRange(RPT);
+  if (r.error) { hint.textContent = r.error; return; }
+  var n = reportRows(RPT, r).length;
+  hint.textContent = (n ? n + ' entr' + (n === 1 ? 'y' : 'ies') : 'No entries') + ' · ' + r.label +
+    (RPT.party && RPT.type === 'all' && !RPT.q.trim() ? ' · with running balance' : '');
+}
+function onReportFormChange() {
+  var prevPortal = RPT.portal;
+  readReportForm();
+  if (RPT.portal !== prevPortal) fillReportParties();
+  updateReportUI();
+}
+/* From the Entries tab: carry over its type filter, and turn a search
+ * that exactly names a person/shop into a proper person statement. */
+function reportPresetFromEntries() {
+  var q = S.filterQ.trim(), party = '';
+  if (q) portalEntries().some(function (e) {
+    if (e.party && e.party.toLowerCase() === q.toLowerCase()) { party = e.party; return true; }
+    return false;
+  });
+  return { type: S.filterType, party: party, q: party ? '' : q, period: party ? 'all' : null };
+}
+function openReportModal(preset) {
+  if (!S.user) return;
+  preset = preset || {};
+  RPT.portal = S.portal;
+  RPT.party = preset.party || '';
+  RPT.type = (preset.type && TYPES[preset.type]) ? preset.type : 'all';
+  RPT.q = preset.q || '';
+  if (preset.period) RPT.period = preset.period;
+  if (!RPT.from) RPT.from = thisMonthKey() + '-01';
+  if (!RPT.to) RPT.to = todayKey();
+  $('#r-portal').value = RPT.portal;
+  $('#r-period').value = RPT.period;
+  $('#r-from').value = RPT.from;
+  $('#r-to').value = RPT.to;
+  fillReportParties();
+  $('#r-type').innerHTML = '<option value="all">All types</option>' + TYPE_ORDER.map(function (k) {
+    return '<option value="' + k + '">' + esc(TYPES[k].label) + '</option>';
+  }).join('');
+  $('#r-type').value = RPT.type;
+  $('#r-q').value = RPT.q;
+  $('#r-summary').checked = RPT.summary;
+  $('#r-balances').checked = RPT.balances;
+  $('#r-sign').checked = RPT.sign;
+  updateReportUI();
+  openModal('#report-modal');
+}
+
+/* Build the statement, then hand it to the browser's print dialog.
+ * window.print() is called directly inside the tap handler — iOS and
+ * some Android browsers ignore it outside a user gesture. */
+function printReport(ev) {
+  if (ev && ev.preventDefault) ev.preventDefault();
+  readReportForm();
+  var r = reportRange(RPT);
+  if (r.error) { toast(r.error); return; }
+  if (typeof window.print !== 'function') { toast('This browser can\'t print. Open Hisab in Chrome or Safari.'); return; }
+  $('#print-root').innerHTML = buildReportHTML(RPT, r);
+  document.body.classList.add('print-report');
+  if (_titleBeforePrint === null) _titleBeforePrint = document.title;
+  document.title = reportFileTitle(RPT, r);
+  var m = $('#report-modal');
+  if (m.classList) m.classList.remove('open');
+  m.hidden = true;
+  try { window.print(); }
+  catch (e) { toast('Printing didn\'t start. Try Chrome or Safari.'); }
+}
+function restoreTitleAfterPrint() {
+  if (_titleBeforePrint === null) return;
+  setTimeout(function () {
+    if (_titleBeforePrint !== null) { document.title = _titleBeforePrint; _titleBeforePrint = null; }
+  }, 1500);
+}
+/* On logout: drop the statement so the next person can't print it. */
+function clearPrintedReport() {
+  var pr = $('#print-root');
+  if (pr) pr.innerHTML = '';
+  if (document.body && document.body.classList) document.body.classList.remove('print-report');
+  if (_titleBeforePrint !== null) { document.title = _titleBeforePrint; _titleBeforePrint = null; }
+}
+
 /* ---------------- entry modal (add / edit) ---------------- */
 function openEntryModal(id) {
   S.editingId = id || null;
@@ -1719,6 +2055,17 @@ document.addEventListener('DOMContentLoaded', function () {
   var rcBtn = $('#account-reconnect');
   if (rcBtn) rcBtn.addEventListener('click', function () { closeAccountMenu(); googleSignInFlow(); });
 
+  var rf = $('#report-form');
+  if (rf) {
+    rf.addEventListener('submit', printReport);
+    rf.addEventListener('change', onReportFormChange);
+    rf.addEventListener('input', onReportFormChange);
+  }
+  $('#report-close').addEventListener('click', function () { closeModal('#report-modal'); });
+  $('#report-cancel').addEventListener('click', function () { closeModal('#report-modal'); });
+  $('#report-modal').addEventListener('click', function (ev) { if (ev.target === this) closeModal('#report-modal'); });
+  if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('afterprint', restoreTitleAfterPrint);
+
   $('#entry-form').addEventListener('submit', handleEntrySubmit);
   $('#entry-close').addEventListener('click', closeEntryModal);
   $('#entry-cancel').addEventListener('click', closeEntryModal);
@@ -1747,6 +2094,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (ev.key !== 'Escape') return;
     if (!$('#confirm-modal').hidden) { closeModal('#confirm-modal'); _confirmCb = null; }
     else if (!$('#entry-modal').hidden) closeEntryModal();
+    else if (!$('#report-modal').hidden) closeModal('#report-modal');
     else if (!$('#account-modal').hidden) closeAccountMenu();
   });
 
