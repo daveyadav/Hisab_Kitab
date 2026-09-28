@@ -293,6 +293,11 @@
   /* Call after a successful load-from-Drive: we are in sync, nothing pending. */
   function markInSync() { setStatus(accessToken ? 'synced' : 'idle'); }
 
+  /* Call when a Google session is restored from the local cache without a
+   * live token (fresh page load): the app opens from the cache and the user
+   * taps once to reconnect Drive. */
+  function noteReauth() { setStatus('reauth'); }
+
   /* Retry pending uploads when the browser comes back online. */
   if (typeof G.addEventListener === 'function') {
     G.addEventListener('online', function () {
@@ -346,6 +351,7 @@
     scheduleSave: scheduleSave,
     flushSave: flushSave,
     markInSync: markInSync,
+    noteReauth: noteReauth,
     hasToken: function () { return !!accessToken; },
     readProfile: readProfile,
     writeProfile: writeProfile,
