@@ -472,9 +472,10 @@ function boot() {
 
   if (sess && sess.kind === 'google' && typeof Drive !== 'undefined') {
     /* Last time was a Google account: restore the session straight from the
-     * local cache — no Google popup, and no token request without a real
-     * user gesture. Cached records open immediately; one tap on
-     * "Tap to reconnect" refreshes the Google token and resumes Drive sync. */
+     * local cache — cached records open immediately, no Google popup.
+     * Drive tries one silent token refresh in the background; if the
+     * browser blocks it, the app just works from the cache and asks for
+     * one tap only when a sync is actually due. */
     var prof = Drive.readProfile();
     if (prof && prof.email) {
       restoreGoogleSession(prof);
@@ -486,8 +487,9 @@ function boot() {
 
 /* Restore a Google session from the local cache, then quietly refresh the
  * Drive token in the background (Google's script loads async, so wait for
- * it briefly). The "Tap to reconnect" pill only appears if Google genuinely
- * needs a manual tap; when everything works the user never sees it. */
+ * it briefly). If the silent refresh fails, Drive stays quiet — the app
+ * works from the cache and the "Tap to reconnect" pill appears only when
+ * the user changes something that actually needs syncing. */
 function restoreGoogleSession(prof) {
   loginAs({ kind: 'google', id: String(prof.email).toLowerCase(),
             displayName: prof.name || prof.email, picture: prof.picture || '' }, true);
@@ -496,10 +498,10 @@ function restoreGoogleSession(prof) {
     if (Drive.gisLoaded() || ++tries > 20) {
       clearInterval(timer);
       if (Drive.gisLoaded()) {
-        Drive.silentReconnect().then(function (ok) { if (!ok) Drive.noteReauth(); });
+        Drive.silentReconnect(prof.email);
       }
-      /* If Google's script never arrived (offline), stay quiet: the queued
-       * Drive upload retries automatically when connectivity returns. */
+      /* If Google's script never arrived (offline), stay quiet: Drive
+       * retries silently when connectivity returns. */
     }
   }, 500);
 }
@@ -691,10 +693,16 @@ function googleSignInFlow(hint) {
         displayName: profile.name || profile.email,
         picture: profile.picture || ''
       };
-      /* Prime the local copy (offline cache) before logging in. */
+      /* Prime the local copy (offline cache) before logging in.
+       * If this device made edits while the Drive token was expired,
+       * keep them: the upload below carries them to Drive (last write
+       * wins) instead of the stale remote copy wiping them out. */
+      var keepLocal = Drive.hasUnsyncedChanges();
       S.user = user;
-      var entries = (remote && validEntriesShape(remote.entries)) ? remote.entries : blankEntries();
-      saveJSON(dataKey(), entries);
+      if (!keepLocal) {
+        var entries = (remote && validEntriesShape(remote.entries)) ? remote.entries : blankEntries();
+        saveJSON(dataKey(), entries);
+      }
       /* Synced nickname wins over the local cache when Drive has one. */
       if (remote && remote.profile && typeof remote.profile.nickname === 'string') {
         var local = loadProfileFor(accountStoreKey());
@@ -705,7 +713,14 @@ function googleSignInFlow(hint) {
       loginAs(user, true);
       Drive.markInSync();
       updateSyncPill(Drive.getStatus());
-      toast(remote ? 'Namaste, ' + displayName() + ' — synced from your Drive.' : 'Signed in with Google — fresh khata ready.');
+      if (keepLocal) {
+        /* Reconnected after offline edits: push this device's newer
+         * records up instead of announcing a sync from Drive. */
+        Drive.flushSave();
+        toast('Reconnected — uploading your latest changes to Drive.');
+      } else {
+        toast(remote ? 'Namaste, ' + displayName() + ' — synced from your Drive.' : 'Signed in with Google — fresh khata ready.');
+      }
     });
   }).catch(function (err) {
     toast(googleErrorText(err));
@@ -743,7 +758,7 @@ function updateSyncPill(s) {
   pill.hidden = false;
   pill.innerHTML = '<span class="dot"></span>' + esc(m[0]);
   pill.className = 'sync-pill ' + m[1];
-  pill.onclick = (s === 'reauth') ? function () { googleSignInFlow(); } : null;
+  pill.onclick = (s === 'reauth') ? function () { googleSignInFlow(S.user && S.user.id); } : null;
 }
 
 /* ---------------- entries ---------------- */
