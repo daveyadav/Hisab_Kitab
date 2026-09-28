@@ -24,8 +24,17 @@
  *   syncing   – an upload is in progress
  *   synced    – last upload succeeded
  *   offline   – no internet; changes are kept locally and retried later
- *   reauth    – Google sign-in expired; user must tap to reconnect
+ *   reauth    – Google sign-in expired and a sync is actually due;
+ *               user taps once to reconnect (the tap is the user gesture
+ *               the browser needs to open Google's popup)
  *   error     – Drive returned an unexpected error
+ *
+ * Boot behaviour: the access token lives in memory only, so every fresh
+ * page load starts without one. We try ONE silent refresh (no popup);
+ * when the browser blocks it (e.g. third-party cookies off — common on
+ * phones) we stay quiet on "Ready" instead of nagging. The "Tap to
+ * reconnect" prompt appears only when the user changes something that
+ * really needs Drive and the silent attempt fails then.
  * ========================================================================= */
 'use strict';
 
@@ -48,6 +57,17 @@
   var payloadProvider = null;
   var dirtyWhileOffline = false;
   var pendingResolve = null;
+  /* reauthNeeded: the last silent token refresh failed (browser blocks
+   * Google's silent iframe, e.g. third-party cookies off). The app keeps
+   * working from the local cache; a tap is asked for only when a Drive
+   * sync is actually due. Cleared by any fresh token. */
+  var reauthNeeded = false;
+  /* One save-triggered silent attempt per boot — never spam Google. */
+  var saveSilentTried = false;
+  /* Account email used as login_hint for silent requests. */
+  var loginHint = null;
+  /* Local edits made while Drive had no token (not yet confirmed there). */
+  var unsyncedChanges = false;
 
   /* ---------------- config / environment ---------------- */
 
@@ -112,6 +132,7 @@
     var cb = pendingResolve; pendingResolve = null;
     if (resp && resp.access_token) {
       accessToken = resp.access_token;
+      reauthNeeded = false; /* any fresh token clears the tap requirement */
       if (cb) cb(null);
     } else if (cb) {
       cb(new Error((resp && resp.error) || 'token-denied'));
@@ -264,8 +285,31 @@
   /* ---------------- debounced saving ---------------- */
 
   function scheduleSave(provider) {
-    if (typeof provider === 'function') payloadProvider = provider;
-    if (!accessToken) return; /* not signed in with Google — nothing to sync */
+    if (typeof provider === 'function') {
+      payloadProvider = provider;
+      unsyncedChanges = true; /* local edits Drive hasn't confirmed yet */
+    }
+    if (!accessToken) {
+      /* Not signed in with Google right now — nothing to sync yet.
+       * When Google needs a tap (reauthNeeded), ask for it only now that
+       * there is actually something to upload: one quiet silent attempt
+       * first, then the "Tap to reconnect" prompt. */
+      if (!online()) { setStatus('offline'); dirtyWhileOffline = true; return; }
+      if (reauthNeeded) {
+        if (!saveSilentTried) {
+          saveSilentTried = true;
+          setStatus('syncing');
+          requestToken('none', loginHint).then(function (err) {
+            if (err || !accessToken) { setStatus('reauth'); return; }
+            reauthNeeded = false;
+            scheduleSave();
+          });
+        } else {
+          setStatus('reauth');
+        }
+      }
+      return;
+    }
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
     if (!online()) { setStatus('offline'); dirtyWhileOffline = true; return; }
     setStatus('syncing');
@@ -281,6 +325,7 @@
     catch (e) { return Promise.resolve(false); }
     return saveRemote(payload).then(function () {
       setStatus('synced');
+      unsyncedChanges = false;
       return true;
     }).catch(function (e) {
       if (e && e.message === 'reauth-needed') setStatus('reauth');
@@ -291,34 +336,51 @@
   }
 
   /* Call after a successful load-from-Drive: we are in sync, nothing pending. */
-  function markInSync() { setStatus(accessToken ? 'synced' : 'idle'); }
+  function markInSync() { unsyncedChanges = false; setStatus(accessToken ? 'synced' : 'idle'); }
 
   /* Call when a Google session is restored from the local cache without a
-   * live token (fresh page load): the app opens from the cache and the user
-   * taps once to reconnect Drive. */
+   * live token (fresh page load): the app opens from the cache and works
+   * offline-capable; Drive reconnects silently when it can, otherwise the
+   * user taps once at the moment a sync is actually due. */
   function noteReauth() { setStatus('reauth'); }
 
-  /* Try to refresh the Google token silently (hidden iframe, no popup).
+  /* Try to refresh the Google token silently (no popup, no user gesture).
    * Resolves true when Drive sync is live again, false when Google
-   * genuinely needs the user to tap and reconnect. */
-  function silentReconnect() {
+   * genuinely needs the user to tap and reconnect. A failed silent
+   * attempt at boot stays QUIET (status 'idle', app works from cache);
+   * the tap prompt is raised later, only when a sync is actually due. */
+  function silentReconnect(hint) {
     if (!configured() || !gisLoaded()) return Promise.resolve(false);
     if (accessToken) {
+      reauthNeeded = false;
       if (status === 'reauth' || status === 'disabled') setStatus('idle');
       return Promise.resolve(true);
     }
+    if (hint) loginHint = hint;
     setStatus('syncing');
-    return requestToken('none').then(function (err) {
-      if (err) { setStatus('reauth'); return false; }
+    return requestToken('none', loginHint).then(function (err) {
+      if (err) {
+        reauthNeeded = true;
+        setStatus('idle');
+        return false;
+      }
+      reauthNeeded = false;
       setStatus('idle');
       return true;
     });
   }
 
-  /* Retry pending uploads when the browser comes back online. */
+  /* Retry pending uploads when the browser comes back online. If the only
+   * thing missing is the token, take one more quiet silent shot — this
+   * lets the app reconnect by itself when connectivity returns. */
   if (typeof G.addEventListener === 'function') {
     G.addEventListener('online', function () {
       if (dirtyWhileOffline && accessToken) { dirtyWhileOffline = false; scheduleSave(); }
+      else if (reauthNeeded && !accessToken && gisLoaded() && configured()) {
+        silentReconnect().then(function (ok) {
+          if (ok) { dirtyWhileOffline = false; if (payloadProvider) scheduleSave(); }
+        });
+      }
     });
   }
 
@@ -335,6 +397,7 @@
       if (G.localStorage) G.localStorage.setItem(LS_PROFILE,
         JSON.stringify({ email: p.email, name: p.name, picture: p.picture }));
     } catch (e) {}
+    if (p && p.email) loginHint = String(p.email).toLowerCase();
   }
   function clearProfile() {
     try { if (G.localStorage) G.localStorage.removeItem(LS_PROFILE); } catch (e) {}
@@ -347,6 +410,10 @@
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
     payloadProvider = null;
     dirtyWhileOffline = false;
+    reauthNeeded = false;
+    saveSilentTried = false;
+    loginHint = null;
+    unsyncedChanges = false;
     clearProfile();
     setStatus('disabled');
     if (t && gisLoaded()) {
@@ -371,6 +438,8 @@
     noteReauth: noteReauth,
     silentReconnect: silentReconnect,
     hasToken: function () { return !!accessToken; },
+    /* True when local edits exist that Drive hasn't confirmed yet. */
+    hasUnsyncedChanges: function () { return unsyncedChanges; },
     readProfile: readProfile,
     writeProfile: writeProfile,
     /* test helpers */
@@ -379,6 +448,8 @@
       if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
       tokenClient = null; accessToken = null; fileId = null;
       payloadProvider = null; dirtyWhileOffline = false; pendingResolve = null;
+      reauthNeeded = false; saveSilentTried = false; loginHint = null;
+      unsyncedChanges = false;
       statusListeners = []; status = 'disabled';
     }
   };
