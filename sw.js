@@ -12,7 +12,7 @@
  * ========================================================================= */
 'use strict';
 
-var CACHE = 'hisab-shell-v2';
+var CACHE = 'hisab-shell-v3';
 
 var ASSETS = [
   './',
