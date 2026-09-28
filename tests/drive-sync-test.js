@@ -7,7 +7,11 @@
  * roundtrip, per-email isolation, 401 → silent re-auth → retry,
  * re-auth failure → 'reauth' status, signOut, local accounts untouched
  * by Drive, Google↔local account isolation, Google session auto-restore
- * from cache with no auto-popup on boot, local session surviving reload.
+ * from cache with no auto-popup on boot, quiet boot when silent refresh
+ * fails (reconnect prompt only when a sync is actually due, at most one
+ * save-triggered silent attempt per boot), reconnect preserving unsynced
+ * local edits instead of the stale remote copy wiping them, local
+ * session surviving reload.
  */
 'use strict';
 const fs = require('fs');
@@ -420,7 +424,8 @@ function drivePayloadFor(email, descs) {
       c.sandbox.S.entries.personal.some(e => e.desc === 'Cached momo'));
   }
 
-  // B7b: silent refresh fails → pill asks to reconnect only then
+  // B7b: silent refresh fails at boot → NO nag; the pill asks to reconnect
+  // only when the user changes something that actually needs syncing
   {
     const c = makeContext();
     c.fake.reauthShouldFail = true;
@@ -435,13 +440,70 @@ function drivePayloadFor(email, descs) {
       c.fake.tokenRequests.length === 1 && c.fake.tokenRequests[0].prompt === 'none',
       JSON.stringify(c.fake.tokenRequests));
     const pill = c.$('#sync-pill');
-    check('B7b sync pill asks to reconnect only after silent failure',
-      pill.hidden === false && /reconnect/i.test(pill.innerHTML), pill.innerHTML);
+    check('B7b no "tap to reconnect" nag at boot when silent fails',
+      pill.hidden === false && !/reconnect/i.test(pill.innerHTML), pill.innerHTML);
+    /* User adds an entry → now a sync is actually due → the pill may ask. */
+    c.sandbox.addEntry({ ts: Date.now(), type: 'cash_purchase', desc: 'New chiya', amount: 80, party: '', note: '' });
+    await tick(400);
+    check('B7b pill asks to reconnect only when a sync is due',
+      /reconnect/i.test(pill.innerHTML), pill.innerHTML);
+    const reqsBeforeTap = c.fake.tokenRequests.length;
+    c.fake.currentEmail = 'ana@example.com'; /* tap signs back into the same account */
     pill.click();
     await tick(150);
     check('B7b tapping triggers a visible reconnect, not another silent one',
-      c.fake.tokenRequests.length === 2 && c.fake.tokenRequests[1].prompt !== 'none',
+      c.fake.tokenRequests.length === reqsBeforeTap + 1 &&
+      c.fake.tokenRequests[c.fake.tokenRequests.length - 1].prompt !== 'none',
       JSON.stringify(c.fake.tokenRequests));
+  }
+
+  // B7f: reconnecting after offline edits keeps them — the stale remote
+  // copy must not wipe entries made while the token was expired
+  {
+    const c = makeContext();
+    c.fake.reauthShouldFail = true;
+    c.store['hisab_session_v2'] = JSON.stringify({ kind: 'google', id: 'ana@example.com' });
+    c.store['hisab_google_profile'] = JSON.stringify({ email: 'ana@example.com', name: 'Ana', picture: '' });
+    c.store['hisab_data_v2_g_ana@example.com'] = JSON.stringify({ personal: [
+      { id: 'e1', ts: Date.now(), type: 'cash_purchase', desc: 'Cached momo', amount: 150, party: '', note: '' },
+    ], business: [] });
+    c.fireReady();
+    await tick(900);
+    c.sandbox.addEntry({ ts: Date.now(), type: 'cash_purchase', desc: 'Offline chiya', amount: 80, party: '', note: '' });
+    await tick(400);
+    c.fake.currentEmail = 'ana@example.com';
+    c.$('#sync-pill').click(); /* tap to reconnect */
+    await tick(900);
+    const descs = c.sandbox.S.entries.personal.map(e => e.desc);
+    check('B7f offline edits survive the reconnect tap',
+      descs.includes('Cached momo') && descs.includes('Offline chiya'), descs.join(','));
+    const ups = c.fake.uploadCalls();
+    check('B7f reconnect uploads instead of staying silent', ups.length >= 1, String(ups.length));
+    const stored = c.fake.stores['ana@example.com'];
+    const latest = stored ? JSON.parse(Object.values(stored.files)[0].content) : null;
+    const upDescs = latest ? latest.entries.personal.map(e => e.desc) : [];
+    check('B7f uploaded payload carries the offline edits',
+      upDescs.includes('Cached momo') && upDescs.includes('Offline chiya'), upDescs.join(','));
+  }
+
+  // B7e: save-triggered silent attempt happens only once per boot
+  {
+    const c = makeContext();
+    const Drive = c.windowStub.Drive;
+    c.fake.reauthShouldFail = true;
+    await Drive.silentReconnect('ana@example.com'); /* boot: fails quietly */
+    check('B7e failed boot silent stays quiet (idle, no nag)', Drive.getStatus() === 'idle', Drive.getStatus());
+    Drive.scheduleSave(() => drivePayloadFor('ana', ['One']));
+    await tick(200);
+    const afterFirst = c.fake.tokenRequests.length;
+    check('B7e first save triggers one silent attempt then asks for tap',
+      afterFirst === 2 && Drive.getStatus() === 'reauth',
+      'reqs=' + afterFirst + ' status=' + Drive.getStatus());
+    Drive.scheduleSave(() => drivePayloadFor('ana', ['Two']));
+    await tick(200);
+    check('B7e second save does not spam another silent attempt',
+      c.fake.tokenRequests.length === afterFirst,
+      'reqs=' + c.fake.tokenRequests.length + ' vs ' + afterFirst);
   }
 
   // B7c: entry rows show date + time clearly when asked (dashboard recent list)
