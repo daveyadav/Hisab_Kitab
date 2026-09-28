@@ -270,5 +270,13 @@ try { var t = localStorage.getItem('hisab_theme'); if (t === 'light' || t === 'd
 <script src="js/config.js"></script>
 <script src="js/drive.js"></script>
 <script src="js/app.js"></script>
+<script>
+/* Offline support: cache the app shell so Hisab opens without internet. */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  });
+}
+</script>
 </body>
 </html>
