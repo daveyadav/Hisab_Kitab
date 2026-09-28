@@ -457,6 +457,20 @@ function drivePayloadFor(email, descs) {
       rowPlain.includes(c.sandbox.fmtTime(e.ts)) && !rowPlain.includes(expected), rowPlain);
   }
 
+  // B7d: pill skips redundant DOM writes (no re-animation / header shake)
+  {
+    const c = makeContext();
+    c.sandbox.S.user = { kind: 'google', id: 'a@b.c', displayName: 'A', picture: '' };
+    c.sandbox.updateSyncPill('synced');
+    const pill = c.$('#sync-pill');
+    check('B7d pill shows for google user', pill.hidden === false && /synced/i.test(pill.innerHTML), pill.innerHTML);
+    pill.innerHTML = 'SENTINEL';
+    c.sandbox.updateSyncPill('synced');
+    check('B7d pill skips rewrite when nothing changed', pill.innerHTML === 'SENTINEL', pill.innerHTML);
+    c.sandbox.updateSyncPill('syncing');
+    check('B7d pill still updates on real change', /syncing/i.test(pill.innerHTML), pill.innerHTML);
+  }
+
   // B8: local session survives a page reload (stays logged in)
   {
     const c1 = makeContext();
