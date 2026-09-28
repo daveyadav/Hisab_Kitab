@@ -471,10 +471,17 @@ function boot() {
   if (account) { loginAs(localUserFrom(account), true); return; }
 
   if (sess && sess.kind === 'google' && typeof Drive !== 'undefined') {
-    /* Last time was a Google account: offer one-tap continue, but never
-     * auto-popup — the token flow needs a real user gesture. */
+    /* Last time was a Google account: restore the session straight from the
+     * local cache — no Google popup, and no token request without a real
+     * user gesture. Cached records open immediately; one tap on
+     * "Tap to reconnect" refreshes the Google token and resumes Drive sync. */
     var prof = Drive.readProfile();
-    if (prof && prof.email) showContinueAs(prof);
+    if (prof && prof.email) {
+      loginAs({ kind: 'google', id: String(prof.email).toLowerCase(),
+                displayName: prof.name || prof.email, picture: prof.picture || '' }, true);
+      if (!Drive.hasToken()) Drive.noteReauth();
+      return;
+    }
   }
   showView('login');
 }
