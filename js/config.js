@@ -22,7 +22,7 @@
  *        https://daveyadav.github.io        (the live GitHub Pages site)
  *        http://localhost:8123              (for testing on your computer)
  *   5. Copy the Client ID and paste it below, replacing
- *      PASTE_YOUR_CLIENT_ID_HERE. It looks like
+ *      434056557055-f71840fi74pdhpevl5fvdllilt2jt1fq.apps.googleusercontent.com. It looks like
  *      1234567890-abcdefghijklmnopqrstuvwxyz123456.apps.googleusercontent.com
  *   6. Re-upload all files to GitHub and hard-refresh the page
  *      (Ctrl/Cmd + Shift + R).

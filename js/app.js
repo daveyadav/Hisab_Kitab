@@ -448,6 +448,21 @@ function hideContinueAs() {
   if (wrap) wrap.hidden = true;
 }
 
+/* Turn a Google sign-in failure into a plain-language message. */
+function googleErrorText(err) {
+  var code = err && err.message ? String(err.message) : '';
+  if (code === 'access_denied' || code === 'token-denied')
+    return 'Google refused access. The app is probably still in Testing mode — it must be Published (In production) so any Gmail can sign in.';
+  if (code === 'popup_closed_by_user')
+    return 'The Google window closed before sign-in finished. Please tap "Sign in with Google" and try again.';
+  if (code === 'immediate_failed' || code === 'google-unavailable')
+    return 'Could not reach Google. Check your internet connection and try again.';
+  if (code === 'userinfo-failed' || code === 'no-email')
+    return 'Google responded but your profile could not be read. Please try again.';
+  return 'Google sign-in didn\'t complete' + (code ? ' (' + code + ')' : '') +
+    '. You can use a device-only account instead.';
+}
+
 /* Full Google sign-in flow: token → profile → load Drive records → enter. */
 function googleSignInFlow(hint) {
   if (typeof Drive === 'undefined' || Drive.uiState() !== 'ready') {
@@ -474,8 +489,8 @@ function googleSignInFlow(hint) {
       updateSyncPill(Drive.getStatus());
       toast(remote ? 'Signed in — synced from your Drive.' : 'Signed in with Google — fresh khata ready.');
     });
-  }).catch(function () {
-    toast('Google sign-in didn\'t complete. You can use a device-only account instead.');
+  }).catch(function (err) {
+    toast(googleErrorText(err));
   }).then(function () {
     setGoogleBusy(false);
     renderGoogleButtons();
