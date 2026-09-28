@@ -6,8 +6,8 @@
  * Google sign-in → profile, loadRemote empty/existing, debounced save
  * roundtrip, per-email isolation, 401 → silent re-auth → retry,
  * re-auth failure → 'reauth' status, signOut, local accounts untouched
- * by Drive, Google↔local account isolation, "Continue as" one-tap with
- * no auto-popup on boot.
+ * by Drive, Google↔local account isolation, Google session auto-restore
+ * from cache with no auto-popup on boot, local session surviving reload.
  */
 'use strict';
 const fs = require('fs');
@@ -398,22 +398,47 @@ function drivePayloadFor(email, descs) {
     check('B6 sync pill hidden for local account', c.$('#sync-pill').hidden === true);
   }
 
-  // B7: boot with google session → "Continue as" shown, no auto-popup
+  // B7: boot with google session → auto-restore from cache, no auto-popup
   {
     const c = makeContext();
     c.store['hisab_session_v2'] = JSON.stringify({ kind: 'google', id: 'alice@gmail.com' });
     c.store['hisab_google_profile'] = JSON.stringify({ email: 'alice@gmail.com', name: 'Alice', picture: '' });
+    c.store['hisab_data_v2_g_alice@gmail.com'] = JSON.stringify({ personal: [
+      { id: 'e1', ts: Date.now(), type: 'cash_purchase', desc: 'Cached momo', amount: 150, party: '', note: '' },
+    ], business: [] });
     c.fireReady();
     await tick(200);
-    check('B7 continue-as offered on boot', c.$('#continue-as-wrap').hidden === false);
-    check('B7 continue-as shows the email', /alice@gmail\.com/.test(c.$('#continue-as-btn').innerHTML));
-    check('B7 main view NOT auto-opened', c.$('#view-main').hidden === true);
+    check('B7 main view auto-opened on boot', c.$('#view-main').hidden === false);
+    check('B7 restored as the same google user',
+      c.sandbox.S.user && c.sandbox.S.user.kind === 'google' && c.sandbox.S.user.id === 'alice@gmail.com');
     check('B7 no token request without user gesture', c.fake.tokenRequests.length === 0);
-    // clicking it completes sign-in
-    c.$('#continue-as-btn').click();
-    await tick(500);
-    check('B7 continue-as click signs in', c.$('#view-main').hidden === false &&
-      c.sandbox.S.user && c.sandbox.S.user.kind === 'google');
+    check('B7 cached entries visible',
+      c.sandbox.S.entries.personal.some(e => e.desc === 'Cached momo'));
+    check('B7 sync pill asks to reconnect',
+      c.$('#sync-pill').hidden === false && /reconnect/i.test(c.$('#sync-pill').innerHTML),
+      c.$('#sync-pill').innerHTML);
+  }
+
+  // B8: local session survives a page reload (stays logged in)
+  {
+    const c1 = makeContext();
+    c1.fireReady();
+    await tick(100);
+    c1.$('#create-username').value = 'kaza';
+    c1.$('#create-password').value = 'secret1';
+    c1.$('#create-password2').value = 'secret1';
+    c1.sandbox.handleCreate({ preventDefault() {} });
+    await tick(300);
+    check('B8 local account created', c1.sandbox.S.user && c1.sandbox.S.user.kind === 'local');
+    // simulate a fresh page load with the same browser storage
+    const c2 = makeContext();
+    Object.assign(c2.store, c1.store);
+    c2.fireReady();
+    await tick(200);
+    check('B8 still logged in after reload', c2.$('#view-main').hidden === false);
+    check('B8 same user restored',
+      c2.sandbox.S.user && c2.sandbox.S.user.kind === 'local' && c2.sandbox.S.user.id === 'kaza');
+    check('B8 login view not shown', c2.$('#view-login').hidden === true);
   }
 
   console.log('--- Part C: nicknames + analytics ---');
