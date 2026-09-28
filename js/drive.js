@@ -298,6 +298,23 @@
    * taps once to reconnect Drive. */
   function noteReauth() { setStatus('reauth'); }
 
+  /* Try to refresh the Google token silently (hidden iframe, no popup).
+   * Resolves true when Drive sync is live again, false when Google
+   * genuinely needs the user to tap and reconnect. */
+  function silentReconnect() {
+    if (!configured() || !gisLoaded()) return Promise.resolve(false);
+    if (accessToken) {
+      if (status === 'reauth' || status === 'disabled') setStatus('idle');
+      return Promise.resolve(true);
+    }
+    setStatus('syncing');
+    return requestToken('none').then(function (err) {
+      if (err) { setStatus('reauth'); return false; }
+      setStatus('idle');
+      return true;
+    });
+  }
+
   /* Retry pending uploads when the browser comes back online. */
   if (typeof G.addEventListener === 'function') {
     G.addEventListener('online', function () {
@@ -352,6 +369,7 @@
     flushSave: flushSave,
     markInSync: markInSync,
     noteReauth: noteReauth,
+    silentReconnect: silentReconnect,
     hasToken: function () { return !!accessToken; },
     readProfile: readProfile,
     writeProfile: writeProfile,
