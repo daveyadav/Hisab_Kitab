@@ -205,9 +205,67 @@ try { var t = localStorage.getItem('hisab_theme'); if (t === 'light' || t === 'd
     </div>
   </div>
 
+  <!-- Print / Save as PDF: statement options -->
+  <div id="report-modal" class="modal" hidden>
+    <div class="sheet card" role="dialog" aria-modal="true" aria-labelledby="report-title">
+      <div class="sheet-head">
+        <h2 id="report-title">Print statement</h2>
+        <button class="icon-btn" id="report-close" aria-label="Close" type="button"></button>
+      </div>
+      <p class="hint" style="margin:-6px 2px 14px">Choose what goes on the page. In the next screen pick <b>Save as PDF</b> for a file, or a printer.</p>
+      <form id="report-form" autocomplete="off">
+        <div class="row2">
+          <label>Khata
+            <select id="r-portal" class="field">
+              <option value="personal">Personal</option>
+              <option value="business">Business</option>
+            </select>
+          </label>
+          <label>Period
+            <select id="r-period" class="field">
+              <option value="month">This month</option>
+              <option value="lastmonth">Last month</option>
+              <option value="30d">Last 30 days</option>
+              <option value="3m">Last 3 months</option>
+              <option value="year">This year</option>
+              <option value="all">All time</option>
+              <option value="custom">Custom dates…</option>
+            </select>
+          </label>
+        </div>
+        <div class="row2" id="r-custom" hidden>
+          <label>From <input id="r-from" type="date"></label>
+          <label>To <input id="r-to" type="date"></label>
+        </div>
+        <label>Person / shop
+          <select id="r-party" class="field"></select>
+        </label>
+        <label>Entry type
+          <select id="r-type" class="field"></select>
+        </label>
+        <label>Contains text <span class="muted">(optional)</span>
+          <input id="r-q" type="text" maxlength="60" placeholder="e.g. rice, rent">
+        </label>
+        <div class="check-list">
+          <label class="check"><input type="checkbox" id="r-summary" checked> Summary &amp; totals by type</label>
+          <label class="check"><input type="checkbox" id="r-balances" checked> Outstanding balances</label>
+          <label class="check"><input type="checkbox" id="r-sign"> Signature lines</label>
+        </div>
+        <p class="hint" id="r-count" aria-live="polite"></p>
+        <div class="form-actions">
+          <span class="spacer"></span>
+          <button type="button" class="btn ghost" id="report-cancel">Cancel</button>
+          <button type="submit" class="btn primary" id="report-print">Print / Save PDF</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   <input type="file" id="import-file" accept="application/json" hidden>
 </div>
+<!-- The printable statement is built here; only visible when printing. -->
+<div id="print-root"></div>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="js/config.js"></script>
 <script src="js/drive.js"></script>
