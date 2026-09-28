@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e7c66">
+<meta name="description" content="Hisab — a calm, offline-first khata (ledger) book for personal and small-business use.">
+<title>Hisab — Khata Book</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- Create account -->
+  <section id="view-create" class="view" hidden>
+    <div class="center-wrap">
+      <div class="brand">
+        <div class="brand-mark" id="create-mark"></div>
+        <h1>Hisab</h1>
+        <p class="muted">Create your own account on this device.</p>
+      </div>
+      <button class="google-btn" id="google-btn-create" type="button">
+        <span class="g-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.5 12.3c0-.9-.1-1.5-.3-2.3H12v4.5h6.5c-.1 1.1-.8 2.7-2.4 3.8l3.6 2.8c2.2-2 3.8-5 3.8-8.8z"/><path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-2.9l-3.8-3c-1 .7-2.4 1.2-4.2 1.2-3.2 0-6-2.2-7-5.1l-3.9 3C3.2 21.5 7.3 24 12 24z"/><path fill="#FBBC05" d="M5 14.2c-.2-.7-.4-1.4-.4-2.2s.1-1.5.4-2.2L1.1 6.9C.4 8.5 0 10.2 0 12s.4 3.5 1.1 5l3.9-2.8z"/><path fill="#EA4335" d="M12 4.7c1.8 0 3 .8 3.7 1.4l3.3-3.2C17.9 1.1 15.2 0 12 0 7.3 0 3.2 2.5 1.1 7l3.9 3c1-2.9 3.8-5.3 7-5.3z"/></svg></span>
+        <span class="g-text"><span class="g-title">Sign in with Google</span><span class="g-sub" id="google-sub-create">Syncs across your devices</span></span>
+      </button>
+      <p class="fineprint center" id="google-note-create" hidden></p>
+      <div class="divider"><span>or create a device-only account</span></div>
+      <form id="create-form" class="card form" autocomplete="off">
+        <label>Username
+          <input id="create-username" type="text" required minlength="3" maxlength="24" placeholder="e.g. kaza" autocomplete="username">
+        </label>
+        <label>Password
+          <input id="create-password" type="password" required minlength="4" maxlength="64" placeholder="Choose a password" autocomplete="new-password">
+        </label>
+        <label>Confirm password
+          <input id="create-password2" type="password" required minlength="4" maxlength="64" placeholder="Repeat the password" autocomplete="new-password">
+        </label>
+        <button class="btn primary" type="submit">Create account</button>
+        <p id="create-error" class="error" hidden></p>
+      </form>
+      <p class="center" style="margin-top:14px"><button class="btn ghost block" id="show-login" type="button">Back to log in</button></p>
+      <p class="fineprint center">Accounts and records live only in this browser on this device. Use More → Backup to keep them safe.</p>
+    </div>
+  </section>
+
+  <!-- Login -->
+  <section id="view-login" class="view" hidden>
+    <div class="center-wrap">
+      <div class="brand">
+        <div class="brand-mark" id="login-mark"></div>
+        <h1>Hisab</h1>
+        <p class="muted">Namaste. Please log in.</p>
+      </div>
+      <div id="continue-as-wrap" hidden>
+        <button class="google-btn" id="continue-as-btn" type="button"></button>
+      </div>
+      <button class="google-btn" id="google-btn-login" type="button">
+        <span class="g-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.5 12.3c0-.9-.1-1.5-.3-2.3H12v4.5h6.5c-.1 1.1-.8 2.7-2.4 3.8l3.6 2.8c2.2-2 3.8-5 3.8-8.8z"/><path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-2.9l-3.8-3c-1 .7-2.4 1.2-4.2 1.2-3.2 0-6-2.2-7-5.1l-3.9 3C3.2 21.5 7.3 24 12 24z"/><path fill="#FBBC05" d="M5 14.2c-.2-.7-.4-1.4-.4-2.2s.1-1.5.4-2.2L1.1 6.9C.4 8.5 0 10.2 0 12s.4 3.5 1.1 5l3.9-2.8z"/><path fill="#EA4335" d="M12 4.7c1.8 0 3 .8 3.7 1.4l3.3-3.2C17.9 1.1 15.2 0 12 0 7.3 0 3.2 2.5 1.1 7l3.9 3c1-2.9 3.8-5.3 7-5.3z"/></svg></span>
+        <span class="g-text"><span class="g-title">Sign in with Google</span><span class="g-sub" id="google-sub-login">Syncs across your devices</span></span>
+      </button>
+      <p class="fineprint center" id="google-note-login" hidden></p>
+      <div class="divider"><span>or continue with a device-only account</span></div>
+      <form id="login-form" class="card form" autocomplete="off">
+        <label>Username
+          <input id="login-username" type="text" required maxlength="24" placeholder="Username" autocomplete="username">
+        </label>
+        <label>Password
+          <input id="login-password" type="password" required maxlength="64" placeholder="Password" autocomplete="current-password">
+        </label>
+        <button class="btn primary" type="submit">Log in</button>
+        <p id="login-error" class="error" hidden></p>
+      </form>
+      <p class="center" style="margin-top:14px"><button class="btn ghost block" id="show-create" type="button">Create a new account</button></p>
+      <p class="fineprint center">Device-only accounts live only in this browser on this device — they are not synced anywhere. Keep a backup from More → Backup.</p>
+    </div>
+  </section>
+
+  <!-- Main app -->
+  <section id="view-main" class="view" hidden>
+    <header class="topbar">
+      <div class="topbar-row">
+        <div class="brand-inline"><span class="brand-mark sm" id="main-mark"></span><strong>Hisab</strong></div>
+        <span id="sync-pill" class="sync-pill" hidden></span>
+        <button id="user-chip" class="user-chip" title="Account"></button>
+      </div>
+      <div class="portal-switch" role="tablist" aria-label="Portal">
+        <button id="portal-personal" class="portal-btn" data-portal="personal">Personal</button>
+        <button id="portal-business" class="portal-btn" data-portal="business">Business</button>
+      </div>
+    </header>
+
+    <main class="content">
+      <section id="tab-dashboard" class="tab" hidden></section>
+      <section id="tab-entries" class="tab" hidden></section>
+      <section id="tab-balances" class="tab" hidden></section>
+      <section id="tab-more" class="tab" hidden></section>
+    </main>
+
+    <button id="fab" class="fab" aria-label="Add entry"></button>
+
+    <nav class="bottomnav" aria-label="Sections">
+      <button class="nav-btn" data-tab="dashboard"><span class="nav-ico"></span><span>Home</span></button>
+      <button class="nav-btn" data-tab="entries"><span class="nav-ico"></span><span>Entries</span></button>
+      <button class="nav-btn" data-tab="balances"><span class="nav-ico"></span><span>Balances</span></button>
+      <button class="nav-btn" data-tab="more"><span class="nav-ico"></span><span>More</span></button>
+    </nav>
+  </section>
+
+  <!-- Entry add/edit sheet -->
+  <div id="entry-modal" class="modal" hidden>
+    <div class="sheet card">
+      <div class="sheet-head">
+        <h2 id="entry-modal-title">New entry</h2>
+        <button class="icon-btn" id="entry-close" aria-label="Close"></button>
+      </div>
+      <form id="entry-form" autocomplete="off">
+        <div class="type-grid" id="type-grid"></div>
+        <label>Description
+          <input id="f-desc" type="text" required maxlength="80" placeholder="e.g. Rice, lentils, oil">
+        </label>
+        <div class="row2">
+          <label>Amount (Rs)
+            <input id="f-amount" type="number" required min="1" step="1" inputmode="numeric" placeholder="0">
+          </label>
+          <label>Date &amp; time
+            <input id="f-when" type="datetime-local" required>
+          </label>
+        </div>
+        <label><span id="f-party-label">Shop / vendor</span>
+          <input id="f-party" type="text" maxlength="60" placeholder="Name (optional)">
+        </label>
+        <label>Note <span class="muted">(optional)</span>
+          <input id="f-note" type="text" maxlength="120" placeholder="Anything to remember">
+        </label>
+        <div class="form-actions">
+          <button type="button" class="btn danger-ghost" id="entry-delete" hidden>Delete</button>
+          <span class="spacer"></span>
+          <button type="button" class="btn ghost" id="entry-cancel">Cancel</button>
+          <button type="submit" class="btn primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Generic confirm dialog -->
+  <div id="confirm-modal" class="modal" hidden>
+    <div class="sheet card narrow">
+      <h2 id="confirm-title">Are you sure?</h2>
+      <p class="muted" id="confirm-text"></p>
+      <div class="form-actions">
+        <span class="spacer"></span>
+        <button class="btn ghost" id="confirm-no">Cancel</button>
+        <button class="btn danger" id="confirm-yes">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Account menu -->
+  <div id="account-modal" class="modal" hidden>
+    <div class="sheet card narrow">
+      <div class="sheet-head">
+        <h2>Account</h2>
+        <button class="icon-btn" id="account-close" aria-label="Close"></button>
+      </div>
+      <div class="user-row">
+        <span class="avatar" id="account-avatar">?</span>
+        <div class="e-main"><div class="e-desc" id="account-name">—</div>
+        <div class="e-sub" id="account-sub">Signed in on this device</div></div>
+      </div>
+      <button type="button" class="btn primary block" id="account-reconnect" hidden>Reconnect Google</button>
+      <div class="form-actions" style="margin-top:14px">
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" id="account-switch">Switch account</button>
+        <button type="button" class="btn danger-ghost" id="account-logout">Log out</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+  <input type="file" id="import-file" accept="application/json" hidden>
+</div>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="js/config.js"></script>
+<script src="js/drive.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
