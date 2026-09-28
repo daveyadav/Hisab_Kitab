@@ -69,7 +69,10 @@ async function fetchMock(req) {
 
 const sandbox = { self: selfMock, caches: cachesMock, fetch: fetchMock, URL: URL };
 vm.createContext(sandbox);
-vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8'), sandbox, { filename: 'sw.js' });
+const SW_SRC = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
+/* Cache name is read from sw.js so version bumps don't break the tests. */
+const CACHE_NAME = (SW_SRC.match(/var CACHE = '([^']+)'/) || [])[1] || 'hisab-shell-v1';
+vm.runInContext(SW_SRC, sandbox, { filename: 'sw.js' });
 
 function fire(type, event) {
   let waiter = null;
@@ -84,7 +87,7 @@ function fire(type, event) {
 (async function () {
   // install → whole shell cached
   await fire('install', {});
-  const cache = await cachesMock.open('hisab-shell-v1');
+  const cache = await cachesMock.open(CACHE_NAME);
   check('install caches the app shell', cache.map.size >= 14, 'got ' + cache.map.size);
   check('install caches index.html', !!cache.map.get(SCOPE + 'index.html'));
   check('install caches js/app.js', !!cache.map.get(SCOPE + 'js/app.js'));
@@ -92,10 +95,10 @@ function fire(type, event) {
     !!cache.map.get(SCOPE + 'manifest.webmanifest') && !!cache.map.get(SCOPE + 'assets/icon-192.png'));
 
   // activate → old caches dropped
-  await cachesMock.open('hisab-shell-v0');
+  await cachesMock.open('hisab-shell-old-test');
   await fire('activate', {});
   const keys = await cachesMock.keys();
-  check('activate removes old caches', keys.length === 1 && keys[0] === 'hisab-shell-v1', keys.join(','));
+  check('activate removes old caches', keys.length === 1 && keys[0] === CACHE_NAME, keys.join(','));
 
   // offline navigation → cached page
   fetchBehavior = 'fail';
