@@ -13,7 +13,7 @@
 const fs = require('fs');
 const vm = require('vm');
 const { webcrypto } = require('crypto');
-const JS = '/home/hatch/workspace/hisab-github/js';
+const JS = require('path').join(__dirname, '..', 'js');
 
 let pass = 0, fail = 0;
 function check(name, cond, extra) {
@@ -414,6 +414,70 @@ function drivePayloadFor(email, descs) {
     await tick(500);
     check('B7 continue-as click signs in', c.$('#view-main').hidden === false &&
       c.sandbox.S.user && c.sandbox.S.user.kind === 'google');
+  }
+
+  console.log('--- Part C: nicknames + analytics ---');
+
+  // C1: local account created with a nickname → greeting uses it
+  {
+    const c = makeContext();
+    c.fireReady();
+    await tick(100);
+    c.$('#create-username').value = 'kaza';
+    c.$('#create-nickname').value = '  Kaji   Dai ';
+    c.$('#create-password').value = 'secret1';
+    c.$('#create-password2').value = 'secret1';
+    c.sandbox.handleCreate({ preventDefault() {} });
+    await tick(200);
+    check('C1 nickname stored per account (trimmed)', JSON.parse(c.store['hisab_profile_v1_kaza']).nickname === 'Kaji Dai');
+    check('C1 displayName uses nickname', c.sandbox.displayName() === 'Kaji Dai');
+    c.sandbox.setNickname('');
+    check('C1 empty nickname falls back to username', c.sandbox.displayName() === 'kaza');
+  }
+
+  // C2-C3: Google nickname syncs through Drive and comes back on a new device
+  {
+    const c = makeContext();
+    c.sandbox.Drive._setDebounceMs(30);
+    c.fireReady();
+    await tick(100);
+    c.$('#google-btn-login').click();
+    await tick(500);
+    c.sandbox.setNickname('Ali');
+    await tick(400);
+    const content = JSON.parse(Object.values(c.fake.stores['alice@gmail.com'].files)[0].content);
+    check('C2 nickname included in Drive payload', content.profile && content.profile.nickname === 'Ali', JSON.stringify(content.profile));
+    c.sandbox.logout();
+    delete c.store['hisab_profile_v1_g_alice@gmail.com'];   // simulate a fresh device
+    c.$('#google-btn-login').click();
+    await tick(500);
+    check('C3 nickname restored from Drive on sign-in', c.sandbox.displayName() === 'Ali', c.sandbox.displayName());
+  }
+
+  // C4: analytics buckets add up
+  {
+    const c = makeContext();
+    c.fireReady();
+    await tick(100);
+    c.$('#create-username').value = 'meera';
+    c.$('#create-password').value = 'secret1';
+    c.$('#create-password2').value = 'secret1';
+    c.sandbox.handleCreate({ preventDefault() {} });
+    await tick(200);
+    const now = Date.now();
+    const add = (type, amount, off) => c.sandbox.addEntry({ ts: now - off * 864e5, type, desc: type, amount, party: 'P', note: '' });
+    add('cash_purchase', 100, 0); add('due_purchase', 200, 1); add('money_given', 50, 2);
+    add('money_taken', 70, 3); add('received_back', 30, 4); add('cash_purchase', 999, 40);
+    const A = c.sandbox.analyze(c.sandbox.S.entries.personal, '30d');
+    check('C4 spent = cash + due in window', A.cur.spent === 300, A.cur.spent);
+    check('C4 money out = cash + gave', A.cur.out === 150, A.cur.out);
+    check('C4 money in = took + got back', A.cur.in === 100, A.cur.in);
+    check('C4 old entry lands in previous period', A.prev.spent === 999, A.prev.spent);
+    check('C4 30 daily buckets summing to totals', A.w.buckets.length === 30 &&
+      A.w.buckets.reduce((s, b) => s + b.spent, 0) === 300);
+    const Y = c.sandbox.analyze(c.sandbox.S.entries.personal, '12m');
+    check('C4 12 monthly buckets include all', Y.w.buckets.length === 12 &&
+      Y.w.buckets.reduce((s, b) => s + b.spent, 0) === 1299);
   }
 
   console.log('\n==== RESULT: ' + pass + ' passed, ' + fail + ' failed ====');

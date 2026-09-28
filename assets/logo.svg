@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Hisab">
+  <title>Hisab</title>
+  <defs>
+    <linearGradient id="hb-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#17b38e"/><stop offset=".55" stop-color="#0b7d65"/><stop offset="1" stop-color="#054a3c"/>
+    </linearGradient>
+    <linearGradient id="hb-gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd98a"/><stop offset="1" stop-color="#e59a2f"/>
+    </linearGradient>
+    <linearGradient id="hb-shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".24"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="hb-page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#eef8f4"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#hb-bg)"/>
+  <rect width="512" height="512" rx="116" fill="url(#hb-shine)"/>
+  <!-- khata book -->
+  <path d="M152 116h194a42 42 0 0 1 42 42v216a22 22 0 0 1-22 22H178a40 40 0 0 1-40-40V130a14 14 0 0 1 14-14z" fill="url(#hb-page)"/>
+  <path d="M138 356a40 40 0 0 1 40-40h210v58a22 22 0 0 1-22 22H178a40 40 0 0 1-40-40z" fill="#cfeae1"/>
+  <path d="M180 350h208" stroke="#fff" stroke-width="10" stroke-linecap="round"/>
+  <!-- rising bars -->
+  <rect x="186" y="238" width="38" height="56" rx="11" fill="#0b7d65"/>
+  <rect x="240" y="202" width="38" height="92" rx="11" fill="#0b7d65"/>
+  <rect x="294" y="160" width="38" height="134" rx="11" fill="#0b7d65"/>
+  <!-- gold bookmark -->
+  <path d="M344 116h30v92l-15-13-15 13z" fill="url(#hb-gold)"/>
+</svg>

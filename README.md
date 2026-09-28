@@ -13,13 +13,22 @@ A calm **khata (ledger) book** for personal and small-business use — built for
 - **Two portals** — Personal khata and Business khata (e.g. a medical shop), switchable from the top bar.
 - **Ledger entries** with auto-filled, readable date + time (Asia/Kathmandu, editable):
   - Cash purchase · Bought on due · Gave money · Took money · I paid back · Got money back
-- **Dashboard** — today's cash out, today's new dues, total payables ("I owe"), total receivables ("owed to me"), this-month summary, recent entries.
+- **Analytics dashboard** — switch between 7 days, 30 days, this month, 12 months or all time:
+  - hero "Spent" figure with change vs the previous period and a trend sparkline
+  - Money out / Money in / Net cash flow / Entries tiles, each with a period-over-period change
+  - **Cash flow** chart (money in up, money out down) with tap/hover tooltips
+  - **Activity by type** donut — tap a type to jump to its entries
+  - **Top people & shops**, **spending by weekday**, and highlights (biggest entry, busiest day, cash vs due)
+  - "Where you stand" — all-time I owe vs owed to me, and your net position
+- **Nickname** — set the name Hisab greets you by (tap your avatar, the pencil next to the greeting, or More → Edit). Stored per account; for Google accounts it syncs through Drive with your khata.
+- **Light / dark / auto theme** (More → Appearance), smooth animations, and `prefers-reduced-motion` support.
+- **Installable** — app icon, favicon and web manifest, so "Add to Home Screen" gives a proper Hisab icon.
 - **Entries view** — per-day grouped list with per-day totals and a grand total, search across items/people/notes, and type filters. Edit or delete any entry.
 - **Balances view** — per-person/vendor running balances, split into "I owe" and "Owed to me". Tap a person to see their entries.
 - **Sync status pill** — Google accounts show **Synced ✓**, **Syncing…**, **Offline — will sync**, or **Reconnect needed** (tap it to sign in again) in the top bar.
 - **JSON backup** — one-tap export downloads the current account's records (filename includes the username or Gmail); import restores them into either account type. Useful for moving records between different Gmail accounts, or as a safety net for local accounts.
 - **Sample data loader** — explore the app with example entries.
-- **Mobile-first UI** — bottom navigation, big touch targets, inline SVG icons, system fonts, NPR formatting (`Rs 1,25,000` lakh/crore grouping).
+- **Mobile-first, desktop-friendly UI** — floating bottom navigation, big touch targets, a two-column analytics grid on wide screens, inline SVG icons and charts (no chart library), system fonts, NPR formatting (`Rs 1,25,000` lakh/crore grouping; chart axes use K / L / Cr).
 
 ## Set up Google sign-in (one-time, ~10 minutes)
 
@@ -98,6 +107,10 @@ A Google account and a local account **never share records**, even on the same p
 ```
 hisab/
 ├── index.html        # app shell, all views/modals, Google buttons
+├── manifest.webmanifest  # install / Add-to-Home-Screen metadata
+├── assets/
+│   ├── logo.svg      # the Hisab logo (khata book with rising bars)
+│   └── *.png         # favicon, app icons, apple-touch-icon
 ├── css/
 │   └── styles.css    # mobile-first styling, no frameworks
 ├── js/
@@ -105,7 +118,7 @@ hisab/
 │   ├── drive.js      # Google sign-in + Drive appDataFolder sync (token stays in memory)
 │   └── config.js     # your Google OAuth client ID goes here
 ├── tests/
-│   └── drive-sync-test.js  # mocked Google/Drive smoke tests (45 checks)
+│   └── drive-sync-test.js  # mocked Google/Drive + nickname + analytics tests (56 checks)
 ├── .nojekyll         # tells GitHub Pages to serve files as-is
 └── README.md
 ```

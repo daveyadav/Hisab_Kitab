@@ -3,9 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0e7c66">
-<meta name="description" content="Hisab — a calm, offline-first khata (ledger) book for personal and small-business use.">
+<meta name="theme-color" content="#0b7d65" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b1210" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Hisab — a calm, offline-first khata (ledger) book with clear analytics for personal and small-business use.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Hisab">
 <title>Hisab — Khata Book</title>
+<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+<link rel="icon" href="assets/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<script>
+/* Apply the saved theme before first paint (no flash). */
+try { var t = localStorage.getItem('hisab_theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+</script>
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -13,11 +24,12 @@
 
   <!-- Create account -->
   <section id="view-create" class="view" hidden>
+    <div class="auth-bg" aria-hidden="true"><span></span><span></span><span></span></div>
     <div class="center-wrap">
       <div class="brand">
-        <div class="brand-mark" id="create-mark"></div>
+        <img class="logo" src="assets/logo.svg" alt="Hisab logo" width="84" height="84">
         <h1>Hisab</h1>
-        <p class="muted">Create your own account on this device.</p>
+        <p class="muted">Create your own khata in seconds.</p>
       </div>
       <button class="google-btn" id="google-btn-create" type="button">
         <span class="g-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.5 12.3c0-.9-.1-1.5-.3-2.3H12v4.5h6.5c-.1 1.1-.8 2.7-2.4 3.8l3.6 2.8c2.2-2 3.8-5 3.8-8.8z"/><path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-2.9l-3.8-3c-1 .7-2.4 1.2-4.2 1.2-3.2 0-6-2.2-7-5.1l-3.9 3C3.2 21.5 7.3 24 12 24z"/><path fill="#FBBC05" d="M5 14.2c-.2-.7-.4-1.4-.4-2.2s.1-1.5.4-2.2L1.1 6.9C.4 8.5 0 10.2 0 12s.4 3.5 1.1 5l3.9-2.8z"/><path fill="#EA4335" d="M12 4.7c1.8 0 3 .8 3.7 1.4l3.3-3.2C17.9 1.1 15.2 0 12 0 7.3 0 3.2 2.5 1.1 7l3.9 3c1-2.9 3.8-5.3 7-5.3z"/></svg></span>
@@ -29,27 +41,31 @@
         <label>Username
           <input id="create-username" type="text" required minlength="3" maxlength="24" placeholder="e.g. kaza" autocomplete="username">
         </label>
+        <label>Nickname <span class="muted">(optional — what we call you)</span>
+          <input id="create-nickname" type="text" maxlength="30" placeholder="e.g. Kaji Dai">
+        </label>
         <label>Password
           <input id="create-password" type="password" required minlength="4" maxlength="64" placeholder="Choose a password" autocomplete="new-password">
         </label>
         <label>Confirm password
           <input id="create-password2" type="password" required minlength="4" maxlength="64" placeholder="Repeat the password" autocomplete="new-password">
         </label>
-        <button class="btn primary" type="submit">Create account</button>
+        <button class="btn primary block" type="submit">Create account</button>
         <p id="create-error" class="error" hidden></p>
       </form>
       <p class="center" style="margin-top:14px"><button class="btn ghost block" id="show-login" type="button">Back to log in</button></p>
-      <p class="fineprint center">Accounts and records live only in this browser on this device. Use More → Backup to keep them safe.</p>
+      <p class="fineprint center">Device-only accounts live only in this browser. Use More → Backup to keep them safe.</p>
     </div>
   </section>
 
   <!-- Login -->
   <section id="view-login" class="view" hidden>
+    <div class="auth-bg" aria-hidden="true"><span></span><span></span><span></span></div>
     <div class="center-wrap">
       <div class="brand">
-        <div class="brand-mark" id="login-mark"></div>
+        <img class="logo" src="assets/logo.svg" alt="Hisab logo" width="84" height="84">
         <h1>Hisab</h1>
-        <p class="muted">Namaste. Please log in.</p>
+        <p class="muted">Namaste. Your khata, calm and clear.</p>
       </div>
       <div id="continue-as-wrap" hidden>
         <button class="google-btn" id="continue-as-btn" type="button"></button>
@@ -67,25 +83,29 @@
         <label>Password
           <input id="login-password" type="password" required maxlength="64" placeholder="Password" autocomplete="current-password">
         </label>
-        <button class="btn primary" type="submit">Log in</button>
+        <button class="btn primary block" type="submit">Log in</button>
         <p id="login-error" class="error" hidden></p>
       </form>
       <p class="center" style="margin-top:14px"><button class="btn ghost block" id="show-create" type="button">Create a new account</button></p>
-      <p class="fineprint center">Device-only accounts live only in this browser on this device — they are not synced anywhere. Keep a backup from More → Backup.</p>
+      <p class="fineprint center">Device-only accounts are not synced anywhere. Keep a backup from More → Backup.</p>
     </div>
   </section>
 
   <!-- Main app -->
   <section id="view-main" class="view" hidden>
     <header class="topbar">
-      <div class="topbar-row">
-        <div class="brand-inline"><span class="brand-mark sm" id="main-mark"></span><strong>Hisab</strong></div>
-        <span id="sync-pill" class="sync-pill" hidden></span>
-        <button id="user-chip" class="user-chip" title="Account"></button>
-      </div>
-      <div class="portal-switch" role="tablist" aria-label="Portal">
-        <button id="portal-personal" class="portal-btn" data-portal="personal">Personal</button>
-        <button id="portal-business" class="portal-btn" data-portal="business">Business</button>
+      <div class="topbar-inner">
+        <div class="topbar-row">
+          <div class="brand-inline"><img class="logo-sm" src="assets/logo.svg" alt="" width="34" height="34"><div>Hisab<small id="portal-caption">Personal khata</small></div></div>
+          <span class="spacer"></span>
+          <span id="sync-pill" class="sync-pill" hidden></span>
+          <button id="user-chip" class="user-chip" title="Profile &amp; account"></button>
+        </div>
+        <div class="segmented portal-switch" id="portal-switch" role="tablist" aria-label="Portal">
+          <span class="thumb" aria-hidden="true"></span>
+          <button id="portal-personal" class="portal-btn" data-portal="personal" role="tab">Personal</button>
+          <button id="portal-business" class="portal-btn" data-portal="business" role="tab">Business</button>
+        </div>
       </div>
     </header>
 
@@ -108,26 +128,28 @@
 
   <!-- Entry add/edit sheet -->
   <div id="entry-modal" class="modal" hidden>
-    <div class="sheet card">
+    <div class="sheet card" role="dialog" aria-modal="true" aria-labelledby="entry-modal-title">
       <div class="sheet-head">
         <h2 id="entry-modal-title">New entry</h2>
-        <button class="icon-btn" id="entry-close" aria-label="Close"></button>
+        <button class="icon-btn" id="entry-close" aria-label="Close" type="button"></button>
       </div>
       <form id="entry-form" autocomplete="off">
         <div class="type-grid" id="type-grid"></div>
-        <label>Description
-          <input id="f-desc" type="text" required maxlength="80" placeholder="e.g. Rice, lentils, oil">
-        </label>
         <div class="row2">
-          <label>Amount (Rs)
+          <label class="amount-field">Amount
+            <span class="cur">Rs</span>
             <input id="f-amount" type="number" required min="1" step="1" inputmode="numeric" placeholder="0">
           </label>
           <label>Date &amp; time
             <input id="f-when" type="datetime-local" required>
           </label>
         </div>
+        <label>Description
+          <input id="f-desc" type="text" required maxlength="80" placeholder="e.g. Rice, lentils, oil">
+        </label>
         <label><span id="f-party-label">Shop / vendor</span>
-          <input id="f-party" type="text" maxlength="60" placeholder="Name (optional)">
+          <input id="f-party" type="text" maxlength="60" placeholder="Name (optional)" list="party-list">
+          <datalist id="party-list"></datalist>
         </label>
         <label>Note <span class="muted">(optional)</span>
           <input id="f-note" type="text" maxlength="120" placeholder="Anything to remember">
@@ -144,39 +166,46 @@
 
   <!-- Generic confirm dialog -->
   <div id="confirm-modal" class="modal" hidden>
-    <div class="sheet card narrow">
+    <div class="sheet card narrow" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
       <h2 id="confirm-title">Are you sure?</h2>
       <p class="muted" id="confirm-text"></p>
       <div class="form-actions">
         <span class="spacer"></span>
-        <button class="btn ghost" id="confirm-no">Cancel</button>
-        <button class="btn danger" id="confirm-yes">Confirm</button>
+        <button class="btn ghost" id="confirm-no" type="button">Cancel</button>
+        <button class="btn danger" id="confirm-yes" type="button">Confirm</button>
       </div>
     </div>
   </div>
 
-  <!-- Account menu -->
+  <!-- Profile / account sheet -->
   <div id="account-modal" class="modal" hidden>
-    <div class="sheet card narrow">
+    <div class="sheet card narrow" role="dialog" aria-modal="true" aria-labelledby="account-title">
       <div class="sheet-head">
-        <h2>Account</h2>
-        <button class="icon-btn" id="account-close" aria-label="Close"></button>
+        <h2 id="account-title">Profile</h2>
+        <button class="icon-btn" id="account-close" aria-label="Close" type="button"></button>
       </div>
-      <div class="user-row">
-        <span class="avatar" id="account-avatar">?</span>
-        <div class="e-main"><div class="e-desc" id="account-name">—</div>
-        <div class="e-sub" id="account-sub">Signed in on this device</div></div>
+      <div class="profile-edit">
+        <span class="avatar lg" id="account-avatar">?</span>
+        <div><div class="e-desc" id="account-name">—</div>
+        <div class="em" id="account-sub">Signed in on this device</div></div>
       </div>
-      <button type="button" class="btn primary block" id="account-reconnect" hidden>Reconnect Google</button>
-      <div class="form-actions" style="margin-top:14px">
-        <span class="spacer"></span>
+      <form id="nickname-form" class="inline-form" autocomplete="off">
+        <label>Nickname
+          <input id="account-nickname" class="field" type="text" maxlength="30" placeholder="What should Hisab call you?">
+        </label>
+        <button type="submit" class="btn primary" id="account-nickname-save">Save</button>
+      </form>
+      <p class="hint" id="nickname-hint">Shown in greetings and on the top bar. Leave empty to use your account name.</p>
+      <button type="button" class="btn primary block" id="account-reconnect" style="margin-top:14px" hidden>Reconnect Google</button>
+      <div class="form-actions" style="margin-top:18px">
         <button type="button" class="btn ghost" id="account-switch">Switch account</button>
+        <span class="spacer"></span>
         <button type="button" class="btn danger-ghost" id="account-logout">Log out</button>
       </div>
     </div>
   </div>
 
-  <div id="toast" class="toast" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
   <input type="file" id="import-file" accept="application/json" hidden>
 </div>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
