@@ -155,10 +155,12 @@ function makeContext({ clientId = 'test-client-123.apps.googleusercontent.com', 
     removeItem: k => { delete store[k]; },
   };
   const fake = makeFake();
+  const loadHandlers = [];
   const windowStub = {
     localStorage,
     navigator: { onLine: online },
-    addEventListener() {}, removeEventListener() {}, scrollTo() {},
+    addEventListener(t, fn) { if (t === 'load' && typeof fn === 'function') loadHandlers.push(fn); },
+    removeEventListener() {}, scrollTo() {},
     crypto: webcrypto, isSecureContext: true,
     HISAB_CONFIG: { GOOGLE_CLIENT_ID: clientId },
     setTimeout, clearTimeout, setInterval, clearInterval,
@@ -175,6 +177,7 @@ function makeContext({ clientId = 'test-client-123.apps.googleusercontent.com', 
     addEventListener(t, fn) { if (t === 'DOMContentLoaded') domReadyHandler = fn; },
     removeEventListener() {},
     body: makeEl('body'),
+    readyState: 'loading', /* fireLoad() flips this, like a real page load */
   };
   const sandbox = {
     window: windowStub, document: documentStub, localStorage,
@@ -192,6 +195,10 @@ function makeContext({ clientId = 'test-client-123.apps.googleusercontent.com', 
     sandbox, windowStub, documentStub, fake, store,
     $: sel => documentStub.querySelector(sel),
     fireReady: () => { if (domReadyHandler) domReadyHandler(); },
+    fireLoad: () => {
+      documentStub.readyState = 'complete';
+      loadHandlers.splice(0).forEach(fn => { try { fn(); } catch (e) {} });
+    },
   };
 }
 
@@ -411,6 +418,7 @@ function drivePayloadFor(email, descs) {
       { id: 'e1', ts: Date.now(), type: 'cash_purchase', desc: 'Cached momo', amount: 150, party: '', note: '' },
     ], business: [] });
     c.fireReady();
+    c.fireLoad(); /* real browsers fire load right after DOMContentLoaded */
     await tick(900);
     check('B7 main view auto-opened on boot', c.$('#view-main').hidden === false);
     check('B7 restored as the same google user',
@@ -435,6 +443,7 @@ function drivePayloadFor(email, descs) {
       { id: 'e1', ts: Date.now(), type: 'cash_purchase', desc: 'Cached momo', amount: 150, party: '', note: '' },
     ], business: [] });
     c.fireReady();
+    c.fireLoad();
     await tick(900);
     check('B7b silent refresh attempted first',
       c.fake.tokenRequests.length === 1 && c.fake.tokenRequests[0].prompt === 'none',
@@ -468,6 +477,7 @@ function drivePayloadFor(email, descs) {
       { id: 'e1', ts: Date.now(), type: 'cash_purchase', desc: 'Cached momo', amount: 150, party: '', note: '' },
     ], business: [] });
     c.fireReady();
+    c.fireLoad();
     await tick(900);
     c.sandbox.addEntry({ ts: Date.now(), type: 'cash_purchase', desc: 'Offline chiya', amount: 80, party: '', note: '' });
     await tick(400);
@@ -716,6 +726,7 @@ function drivePayloadFor(email, descs) {
     c2.fake.currentEmail = 'ana@example.com';
     c2.windowStub.Drive._setDebounceMs(30);
     c2.fireReady();
+    c2.fireLoad(); /* a real page load fires 'load' right after DOMContentLoaded */
     await tick(1800);
     const descs = c2.sandbox.S.entries.personal.map(e => e.desc);
     check('B10c offline entry still visible after close + reopen',
@@ -728,6 +739,36 @@ function drivePayloadFor(email, descs) {
     check('B10c Drive received the offline entry', upDescs.includes('Offline chiya'), upDescs.join(','));
     check('B10c dirty flag cleared once synced',
       c2.store['hisab_drive_dirty_ana@example.com'] === undefined);
+  }
+
+  // B10g: the silent token refresh waits for window 'load', so Google's
+  // hidden iframe can never hold the page's load event hostage (a stuck
+  // load starves the service-worker registration → no offline mode)
+  {
+    const c1 = makeContext();
+    const D1 = c1.windowStub.Drive;
+    D1._setDebounceMs(30);
+    c1.fake.currentEmail = 'ana@example.com';
+    const prof = await D1.signIn();
+    D1.writeProfile(prof);
+    c1.store['hisab_session_v2'] = JSON.stringify({ kind: 'google', id: 'ana@example.com' });
+    c1.store['hisab_drive_dirty_ana@example.com'] = '1';
+    c1.store['hisab_data_v2_g_ana@example.com'] = JSON.stringify({ personal: [
+      { id: 'e1', ts: Date.now(), type: 'cash_purchase', desc: 'Pre-load momo', amount: 80, party: '', note: '' },
+    ], business: [] });
+
+    const c2 = makeContext();
+    Object.assign(c2.store, c1.store);
+    c2.fake.currentEmail = 'ana@example.com';
+    c2.windowStub.Drive._setDebounceMs(30);
+    c2.fireReady();
+    await tick(1200); /* GIS poll ran, but 'load' has NOT fired yet */
+    check('B10g no silent token request before page load',
+      c2.fake.uploadCalls().length === 0, String(c2.fake.uploadCalls().length));
+    c2.fireLoad();
+    await tick(1500);
+    check('B10g silent reconnect runs after load and uploads the pending entry',
+      c2.fake.uploadCalls().length >= 1, String(c2.fake.uploadCalls().length));
   }
 
   // B10d: the account modal shows an honest offline-readiness line

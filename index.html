@@ -291,6 +291,11 @@ function registerSW() {
     if (window.console && console.warn) console.warn('Hisab offline support unavailable:', err);
   }
 }
+/* Register right away — do NOT wait for window 'load'. A slow third-party
+ * iframe (Google's silent sign-in) can delay 'load' indefinitely, and
+ * home-screen launches often resume a warm page with no 'load' at all.
+ * The 'load' + visibility listeners below are just backups. */
+registerSW();
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', registerSW);
   document.addEventListener('visibilitychange', function () {

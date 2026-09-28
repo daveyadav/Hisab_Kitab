@@ -502,12 +502,29 @@ function restoreGoogleSession(prof) {
     if (Drive.gisLoaded() || ++tries > 20) {
       clearInterval(timer);
       if (Drive.gisLoaded()) {
-        Drive.silentReconnect(prof.email);
+        /* Google's silent sign-in uses a hidden iframe that would delay
+         * window 'load' if injected early — and the offline installer must
+         * not wait on Google. Run it after load; the app works from the
+         * local cache meanwhile. */
+        whenLoaded(function () { Drive.silentReconnect(prof.email); });
       }
       /* If Google's script never arrived (offline), stay quiet: Drive
        * retries silently when connectivity returns. */
     }
   }, 500);
+}
+
+/* Run fn now if the page already finished loading, else after 'load'. */
+function whenLoaded(fn) {
+  try {
+    if (typeof document !== 'undefined' && document.readyState === 'complete') { fn(); return; }
+  } catch (e) { /* fall through to the listener */ }
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('load', function h() {
+      window.removeEventListener('load', h);
+      fn();
+    });
+  } else { fn(); }
 }
 
 function loginAs(user, quiet) {
