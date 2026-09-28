@@ -8,7 +8,8 @@
  *
  * How it works:
  *   - Google Identity Services (loaded from accounts.google.com) gives
- *     us an OAuth access token with the drive.appdata scope.
+ *     us an OAuth access token with the drive.appdata scope (plus
+ *     openid/email/profile so we can read the user's name and email).
  *   - The token lives in memory only and is never written to storage.
  *   - We keep a local copy of the synced records in localStorage
  *     (same key the app already uses), so the app also opens offline.
@@ -33,7 +34,7 @@
   var G = (typeof window !== 'undefined') ? window
         : ((typeof globalThis !== 'undefined') ? globalThis : this);
 
-     var SCOPE = 'openid email profile https://www.googleapis.com/auth/drive.appdata';
+  var SCOPE = 'openid email profile https://www.googleapis.com/auth/drive.appdata';
   var FILE_NAME = 'hisab-data.json';
   var LS_PROFILE = 'hisab_google_profile';
   var DEBOUNCE_MS = 2000;
@@ -98,7 +99,10 @@
       tokenClient = G.google.accounts.oauth2.initTokenClient({
         client_id: clientId(),
         scope: SCOPE,
-        callback: onTokenResponse
+        callback: onTokenResponse,
+        /* Fires when the Google popup is closed, blocked, or fails —
+         * without this the sign-in button would wait forever. */
+        error_callback: onTokenError
       });
     }
     return tokenClient;
@@ -112,6 +116,13 @@
     } else if (cb) {
       cb(new Error((resp && resp.error) || 'token-denied'));
     }
+  }
+
+  function onTokenError(err) {
+    var cb = pendingResolve; pendingResolve = null;
+    var type = (err && err.type) || 'popup-failed';
+    if (type === 'popup_closed') type = 'popup_closed_by_user';
+    if (cb) cb(new Error(type));
   }
 
   /* prompt: '' (default), 'none' (silent), 'select_account', 'consent'.
