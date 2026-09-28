@@ -240,10 +240,9 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
 
 /* ================= sync pill ================= */
 .sync-pill{
-  display:inline-flex;align-items:center;gap:6px;font-size:.72rem;font-weight:700;
-  border:1px solid var(--line);border-radius:999px;padding:5px 10px;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:.72rem;font-weight:700;
+  border:1px solid var(--line);border-radius:999px;padding:5px 10px;min-width:92px;
   background:var(--surface);color:var(--ink-2);white-space:nowrap;
-  animation:fade .4s var(--ease) both;
 }
 .sync-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
 .sync-pill.ok .dot{background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
