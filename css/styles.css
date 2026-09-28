@@ -32,7 +32,7 @@
   /* chart series — validated (dataviz validator, light surface) */
   --s-in:#0f9b7a;
   --s-out:#e0643a;
-  --t1:#2a78d6; --t2:#eb6834; --t3:#1baf7a; --t4:#eda100; --t5:#e87ba4; --t6:#008300;
+  --t1:#2a78d6; --t2:#eb6834; --t3:#1baf7a; --t4:#eda100; --t5:#e87ba4; --t6:#008300; --t7:#7c5cd6;
 
   --radius:20px;
   --radius-sm:14px;
@@ -57,7 +57,7 @@
     --danger:#ef6b57; --danger-soft:#3a1d19; --pos:#4fd1ab; --neg:#ef7d6b;
     --glass:rgba(18,27,24,.78); --glass-line:rgba(255,255,255,.06); --scrim:rgba(0,0,0,.6);
     --s-in:#1ba583; --s-out:#e56a3e;
-    --t1:#3987e5; --t2:#d95926; --t3:#199e70; --t4:#c98500; --t5:#d55181; --t6:#008300;
+    --t1:#3987e5; --t2:#d95926; --t3:#199e70; --t4:#c98500; --t5:#d55181; --t6:#008300; --t7:#a58cf0;
     --shadow-sm:0 1px 2px rgba(0,0,0,.3);
     --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px -8px rgba(0,0,0,.5);
     --shadow-lg:0 2px 6px rgba(0,0,0,.4),0 24px 48px -12px rgba(0,0,0,.7);
@@ -74,7 +74,7 @@
   --danger:#ef6b57; --danger-soft:#3a1d19; --pos:#4fd1ab; --neg:#ef7d6b;
   --glass:rgba(18,27,24,.78); --glass-line:rgba(255,255,255,.06); --scrim:rgba(0,0,0,.6);
   --s-in:#1ba583; --s-out:#e56a3e;
-  --t1:#3987e5; --t2:#d95926; --t3:#199e70; --t4:#c98500; --t5:#d55181; --t6:#008300;
+  --t1:#3987e5; --t2:#d95926; --t3:#199e70; --t4:#c98500; --t5:#d55181; --t6:#008300; --t7:#a58cf0;
   --shadow-sm:0 1px 2px rgba(0,0,0,.3);
   --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px -8px rgba(0,0,0,.5);
   --shadow-lg:0 2px 6px rgba(0,0,0,.4),0 24px 48px -12px rgba(0,0,0,.7);
@@ -465,6 +465,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
 
 .t-cash_purchase{--c:var(--t1)} .t-due_purchase{--c:var(--t2)} .t-money_given{--c:var(--t3)}
 .t-money_taken{--c:var(--t4)} .t-paid_back{--c:var(--t5)} .t-received_back{--c:var(--t6)}
+.t-income{--c:var(--t7)}
 
 .empty{text-align:center;padding:40px 20px;color:var(--muted)}
 .empty .em-ico{width:64px;height:64px;border-radius:20px;margin:0 auto 12px;background:var(--surface-3);display:flex;align-items:center;justify-content:center;color:var(--ink-2)}

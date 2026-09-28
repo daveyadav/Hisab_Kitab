@@ -619,6 +619,34 @@ function drivePayloadFor(email, descs) {
       Y.w.buckets.reduce((s, b) => s + b.spent, 0) === 1299);
   }
 
+  // B9: income type — money in shows +, money out shows −
+  {
+    const c = makeContext();
+    const sb = c.sandbox;
+    const mk = (type, amount) => ({ id: 'e1', ts: Date.now(), type, desc: 'Test', amount, party: '', note: '' });
+    check('B9 income type registered with income flow',
+      sb.TYPES.income && sb.TYPES.income.flow === 'income' && sb.TYPE_ORDER.indexOf('income') >= 0,
+      JSON.stringify(sb.TYPES.income && sb.TYPES.income.flow));
+    check('B9 income counts as money in', !!(sb.IS_IN || {}).income, '');
+    const rowIn = sb.entryRow(mk('income', 5000));
+    check('B9 income row shows + sign', rowIn.indexOf('+ ') >= 0, rowIn.slice(-90));
+    check('B9 income row uses in class', rowIn.indexOf('e-amt in') >= 0, rowIn.slice(-90));
+    const rowOut = sb.entryRow(mk('cash_purchase', 500));
+    check('B9 cash purchase row shows − sign', rowOut.indexOf('− ') >= 0, rowOut.slice(-90));
+    check('B9 cash purchase row uses out class', rowOut.indexOf('e-amt out') >= 0, rowOut.slice(-90));
+    const rowBack = sb.entryRow(mk('received_back', 1500));
+    check('B9 got-money-back row shows + (money came in)', rowBack.indexOf('+ ') >= 0, rowBack.slice(-90));
+    const rowDue = sb.entryRow(mk('due_purchase', 2000));
+    check('B9 on-due row shows no sign (no cash moved)', rowDue.indexOf('+ ') < 0 && rowDue.indexOf('− ') < 0, rowDue.slice(-90));
+    const t = sb.totalsFor([mk('income', 5000), mk('cash_purchase', 500)]);
+    check('B9 totalsFor tracks income separately', t.income === 5000 && t.cash === 500,
+      JSON.stringify({ income: t.income, cash: t.cash }));
+    const st = sb.blankStats();
+    sb.addToStats(st, mk('income', 5000));
+    check('B9 income adds to money-in analytics', st.in === 5000 && st.byType.income === 5000,
+      st.in + '/' + st.byType.income);
+  }
+
   console.log('\n==== RESULT: ' + pass + ' passed, ' + fail + ' failed ====');
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error('HARNESS ERROR:', e); process.exit(2); });

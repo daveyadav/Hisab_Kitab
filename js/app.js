@@ -58,7 +58,8 @@ function profileKeyFor(storeKey) { return 'hisab_profile_v1_' + storeKey; }
  *  - payable-: I paid some of what I owed
  *  - receivable+: someone now owes me (I gave/lent money)
  *  - receivable-: someone paid me back
- * `color` is a fixed categorical slot (CSS --t1…--t6), so a type keeps
+ *  - income: money came to me with no debt attached (salary, work)
+ * `color` is a fixed categorical slot (CSS --t1…--t7), so a type keeps
  * its colour everywhere: list icons, filters, charts.                     */
 var TYPES = {
   cash_purchase:  { label: 'Cash purchase',  short: 'Cash',      partyLabel: 'Shop / vendor (optional)', flow: 'cash',        icon: 'cart',    color: 't1' },
@@ -66,17 +67,18 @@ var TYPES = {
   money_given:    { label: 'Gave money',     short: 'Gave',      partyLabel: 'Person',                   flow: 'receivable+', icon: 'up',      color: 't3' },
   money_taken:    { label: 'Took money',     short: 'Took',      partyLabel: 'Person',                   flow: 'payable+',    icon: 'down',    color: 't4' },
   paid_back:      { label: 'I paid back',    short: 'Paid back', partyLabel: 'Person / vendor',          flow: 'payable-',    icon: 'check',   color: 't5' },
-  received_back:  { label: 'Got money back', short: 'Got back',  partyLabel: 'Person',                   flow: 'receivable-', icon: 'inbox',   color: 't6' }
+  received_back:  { label: 'Got money back', short: 'Got back',  partyLabel: 'Person',                   flow: 'receivable-', icon: 'inbox',   color: 't6' },
+  income:         { label: 'Income',         short: 'Income',    partyLabel: 'Source (optional)',        flow: 'income',      icon: 'cash',    color: 't7' }
 };
-var TYPE_ORDER = ['cash_purchase', 'due_purchase', 'money_given', 'money_taken', 'paid_back', 'received_back'];
+var TYPE_ORDER = ['cash_purchase', 'due_purchase', 'money_given', 'money_taken', 'paid_back', 'received_back', 'income'];
 
 /* Analytics buckets:
  *  spent = things bought (cash + on due)
  *  out   = cash that left my hand (cash purchase, gave money, paid back)
- *  in    = cash that came to me (took money, got money back)            */
+ *  in    = cash that came to me (took money, got money back, income)    */
 var IS_SPENT = { cash_purchase: 1, due_purchase: 1 };
 var IS_OUT   = { cash_purchase: 1, money_given: 1, paid_back: 1 };
-var IS_IN    = { money_taken: 1, received_back: 1 };
+var IS_IN    = { money_taken: 1, received_back: 1, income: 1 };
 
 /* ---------------- tiny DOM helpers ---------------- */
 function $(s, r) { return (r || document).querySelector(s); }
@@ -121,6 +123,7 @@ var ICONS = {
   check:   '<path d="M4 12.5l5 5L20 6.5"/>',
   cart:    '<path d="M3 4h2l2.4 11.2h10.9L21 8H7"/><circle cx="10" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/>',
   receipt: '<path d="M6 3h12v18l-2-1.6-2 1.6-2-1.6L10 21l-2-1.6L6 21z"/><path d="M9 8h6M9 12h6"/>',
+  cash:    '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M5.5 9.5h.01M18.5 14.5h.01"/>',
   up:      '<path d="M12 19V5"/><path d="M5 12l7-7 7 7"/>',
   down:    '<path d="M12 5v14"/><path d="M5 12l7 7 7-7"/>',
   inbox:   '<path d="M3 13l2.7-7.5h12.6L21 13v7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 13h6l1.6 2.6h2.8L15 13h6"/>',
@@ -812,11 +815,12 @@ function computeBalances(list) {
   return map;
 }
 function totalsFor(list) {
-  var t = { cash: 0, payable: 0, receivable: 0, paidBack: 0, receivedBack: 0, count: list.length, gross: 0 };
+  var t = { cash: 0, payable: 0, receivable: 0, paidBack: 0, receivedBack: 0, income: 0, count: list.length, gross: 0 };
   list.forEach(function (e) {
     t.gross += e.amount;
     var f = TYPES[e.type] ? TYPES[e.type].flow : 'cash';
     if (f === 'cash') t.cash += e.amount;
+    else if (f === 'income') t.income += e.amount;
     else if (f === 'payable+') t.payable += e.amount;
     else if (f === 'payable-') t.paidBack += e.amount;
     else if (f === 'receivable+') t.receivable += e.amount;
@@ -1216,9 +1220,10 @@ function renderHeader() {
 
 function entryRow(e, showDate) {
   var t = TYPES[e.type] || TYPES.cash_purchase;
-  var f = t.flow;
-  var amtCls = (f === 'receivable+' || f === 'receivable-') ? 'in' : (f === 'cash' || f === 'payable+' ? 'out' : '');
-  var sign = (f === 'payable-' || f === 'receivable-') ? '− ' : '';
+  /* Money that came to me shows +, money that left shows −, anything
+   * else (bought on due — no cash moved yet) shows no sign. */
+  var amtCls = IS_IN[e.type] ? 'in' : (IS_OUT[e.type] ? 'out' : '');
+  var sign = IS_IN[e.type] ? '+ ' : (IS_OUT[e.type] ? '− ' : '');
   /* showDate: lists without a day header (e.g. dashboard "Recent entries")
    * show the full date + time so nothing is hidden. */
   var dt = showDate ? fmtDateTime(e.ts) : fmtTime(e.ts);
@@ -1648,6 +1653,7 @@ function loadSampleData() {
         { d: 'Took from Sita', a: 2000, p: 'Sita', t: 'money_taken', off: 2 },
         { d: 'Paid Kalimati vendor', a: 380, p: 'Kalimati vendor', t: 'paid_back', off: 3 },
         { d: 'Ramesh returned part', a: 1500, p: 'Ramesh', t: 'received_back', off: 4 },
+        { d: 'Monthly salary', a: 45000, p: 'Office', t: 'income', off: 6 },
         { d: 'Milk (week)', a: 840, p: 'Dairy', t: 'cash_purchase', off: 5 },
         { d: 'Cooking gas', a: 1910, p: 'Gas depot', t: 'cash_purchase', off: 8 },
         { d: 'Fruits', a: 650, p: 'Kalimati vendor', t: 'due_purchase', off: 10 },
@@ -1666,6 +1672,7 @@ function loadSampleData() {
         { d: 'Antibiotics stock', a: 12000, p: 'City Pharma', t: 'due_purchase', off: 2 },
         { d: 'Gave staff advance', a: 10000, p: 'Hari', t: 'money_given', off: 3 },
         { d: 'Loan from Bijay', a: 20000, p: 'Bijay', t: 'money_taken', off: 6 },
+        { d: 'Counter sales', a: 15000, p: '', t: 'income', off: 5 },
         { d: 'Syrups & ORS', a: 6400, p: 'City Pharma', t: 'due_purchase', off: 9 },
         { d: 'Shop rent', a: 18000, p: 'Landlord', t: 'cash_purchase', off: 11 },
         { d: 'Paid City Pharma', a: 12000, p: 'City Pharma', t: 'paid_back', off: 15 },
@@ -1765,7 +1772,8 @@ function balanceWords(n) {
 var TYPE_EFFECT = {
   cash_purchase: 'Money out', due_purchase: 'On due — I owe',
   money_given: 'Money out — they owe me', money_taken: 'Money in — I owe',
-  paid_back: 'Money out — I owe less', received_back: 'Money in — they owe less'
+  paid_back: 'Money out — I owe less', received_back: 'Money in — they owe less',
+  income: 'Money in — earned'
 };
 
 function buildReportHTML(o, r) {
@@ -1802,7 +1810,7 @@ function buildReportHTML(o, r) {
     };
     html += '<section class="rp-sec rp-keep"><h2>Summary</h2><div class="rp-tiles">' +
       tile('Money out', fmtRs(st.out), 'Cash paid, given or paid back') +
-      tile('Money in', fmtRs(st.in), 'Cash taken or received back') +
+      tile('Money in', fmtRs(st.in), 'Cash taken, received back or earned') +
       tile('Net cash flow', (netFlow > 0 ? '+' : '') + fmtRs(netFlow), netFlow > 0 ? 'More came in than went out' : netFlow < 0 ? 'More went out than came in' : 'In and out are equal') +
       tile('Bought on due', fmtRs(st.byType.due_purchase), 'Purchases made on credit') +
       tile('Spent on purchases', fmtRs(st.spent), 'Cash + on due') +
@@ -1841,8 +1849,8 @@ function buildReportHTML(o, r) {
         '<td>' + esc(e.desc) + note + '</td>' +
         (o.party ? '' : '<td>' + (e.party ? esc(e.party) : '<span class="rp-mute">—</span>') + '</td>') +
         '<td>' + esc((TYPES[e.type] || TYPES.cash_purchase).label) + '</td>' +
-        '<td class="n o">' + (col === 'o' ? fmtNum(e.amount) : '') + '</td>' +
-        '<td class="n i">' + (col === 'i' ? fmtNum(e.amount) : '') + '</td>' +
+        '<td class="n o">' + (col === 'o' ? '− ' + fmtNum(e.amount) : '') + '</td>' +
+        '<td class="n i">' + (col === 'i' ? '+ ' + fmtNum(e.amount) : '') + '</td>' +
         '<td class="n">' + (col === 'd' ? fmtNum(e.amount) : '') + '</td>' +
         (running ? '<td class="n rb">' + balanceWords(bal) + '</td>' : '') + '</tr>';
     });
