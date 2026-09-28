@@ -26,10 +26,11 @@ MockCache.prototype._key = function (req) {
   return typeof req === 'string' ? new URL(req, SCOPE).href : req.url;
 };
 MockCache.prototype.addAll = async function (list) {
-  for (const p of list) {
-    const url = new URL(p, SCOPE).href;
-    this.map.set(url, mockResponse(url, true, 'cached:' + url));
-  }
+  for (const p of list) { await this.add(p); }
+};
+MockCache.prototype.add = async function (p) {
+  const url = new URL(p, SCOPE).href;
+  this.map.set(url, mockResponse(url, true, 'cached:' + url));
 };
 MockCache.prototype.match = async function (req) { return this.map.get(this._key(req)) || null; };
 MockCache.prototype.put = async function (req, res) { this.map.set(this._key(req), res); };
@@ -93,6 +94,25 @@ function fire(type, event) {
   check('install caches js/app.js', !!cache.map.get(SCOPE + 'js/app.js'));
   check('install caches manifest + icons',
     !!cache.map.get(SCOPE + 'manifest.webmanifest') && !!cache.map.get(SCOPE + 'assets/icon-192.png'));
+
+  // install survives a single failing asset (offline must not die on one 404)
+  {
+    const failing = new MockCache();
+    const origAdd = failing.add;
+    failing.add = async function (p) {
+      if (String(p).indexOf('logo-maskable') >= 0) throw new Error('404');
+      return origAdd.call(this, p);
+    };
+    cachesMock._caches.set(CACHE_NAME + '-probe', failing);
+    let ok = true;
+    try {
+      const ASSETS_PROBE = (SW_SRC.match(/var ASSETS = \[([\s\S]*?)\];/) || [])[1] || '';
+      const list = ASSETS_PROBE.split(',').map(s => s.trim().replace(/^'|'$/g, '')).filter(Boolean);
+      await Promise.all(list.map(a => failing.add(a).catch(function () {})));
+    } catch (e) { ok = false; }
+    check('install keeps going when one asset fails', ok && failing.map.size >= 13, 'got ' + failing.map.size);
+    cachesMock._caches.delete(CACHE_NAME + '-probe');
+  }
 
   // activate → old caches dropped
   await cachesMock.open('hisab-shell-old-test');

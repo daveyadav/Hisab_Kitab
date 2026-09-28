@@ -647,6 +647,89 @@ function drivePayloadFor(email, descs) {
       st.in + '/' + st.byType.income);
   }
 
+  console.log('--- Part D: offline edits survive close + reopen ---');
+
+  // B10a: an edit queued while offline persists its dirty flag in storage
+  {
+    const c = makeContext();
+    const Drive = c.windowStub.Drive;
+    Drive._setDebounceMs(30);
+    c.fake.currentEmail = 'ana@example.com';
+    const prof = await Drive.signIn();
+    Drive.writeProfile(prof);
+    c.windowStub.navigator.onLine = false; /* go offline */
+    Drive.scheduleSave(() => drivePayloadFor('ana', ['Offline momo']));
+    await tick(100);
+    check('B10a offline save persists the dirty flag',
+      c.store['hisab_drive_dirty_ana@example.com'] === '1');
+    check('B10a hasUnsyncedChanges true while offline', Drive.hasUnsyncedChanges() === true);
+    check('B10a nothing uploaded while offline', c.fake.uploadCalls().length === 0);
+    // simulate closing the app: brand-new JS context, same browser storage
+    const c2 = makeContext();
+    Object.assign(c2.store, c.store);
+    check('B10a dirty flag survives the restart',
+      c2.windowStub.Drive.hasUnsyncedChanges() === true,
+      'flag=' + c2.store['hisab_drive_dirty_ana@example.com']);
+  }
+
+  // B10b: a landed upload clears the persisted flag
+  {
+    const c = makeContext();
+    const Drive = c.windowStub.Drive;
+    Drive._setDebounceMs(30);
+    c.fake.currentEmail = 'ana@example.com';
+    const prof = await Drive.signIn();
+    Drive.writeProfile(prof);
+    c.windowStub.navigator.onLine = false;
+    Drive.scheduleSave(() => drivePayloadFor('ana', ['Offline momo']));
+    await tick(100);
+    check('B10b dirty before reconnect', c.store['hisab_drive_dirty_ana@example.com'] === '1');
+    c.windowStub.navigator.onLine = true;
+    await Drive.silentReconnect('ana@example.com'); /* token back → flush */
+    await tick(400);
+    check('B10b pending edit uploaded once online', c.fake.uploadCalls().length >= 1,
+      String(c.fake.uploadCalls().length));
+    check('B10b dirty flag cleared after the upload lands',
+      c.store['hisab_drive_dirty_ana@example.com'] === undefined);
+    check('B10b hasUnsyncedChanges false after sync', Drive.hasUnsyncedChanges() === false);
+  }
+
+  // B10c: full story — offline entry, app closed, reopened online:
+  // the entry is still there and reaches Drive by itself
+  {
+    const c1 = makeContext();
+    const D1 = c1.windowStub.Drive;
+    D1._setDebounceMs(30);
+    c1.fake.currentEmail = 'ana@example.com';
+    const prof = await D1.signIn();
+    D1.writeProfile(prof);
+    c1.windowStub.navigator.onLine = false; /* offline */
+    D1.scheduleSave(() => drivePayloadFor('ana', ['Offline chiya']));
+    await tick(100);
+    c1.store['hisab_session_v2'] = JSON.stringify({ kind: 'google', id: 'ana@example.com' });
+    c1.store['hisab_data_v2_g_ana@example.com'] = JSON.stringify({ personal: [
+      { id: 'e1', ts: Date.now(), type: 'cash_purchase', desc: 'Offline chiya', amount: 80, party: '', note: '' },
+    ], business: [] });
+
+    const c2 = makeContext(); /* fresh boot, same browser storage */
+    Object.assign(c2.store, c1.store);
+    c2.fake.currentEmail = 'ana@example.com';
+    c2.windowStub.Drive._setDebounceMs(30);
+    c2.fireReady();
+    await tick(1800);
+    const descs = c2.sandbox.S.entries.personal.map(e => e.desc);
+    check('B10c offline entry still visible after close + reopen',
+      descs.includes('Offline chiya'), descs.join(','));
+    const ups = c2.fake.uploadCalls();
+    check('B10c pending offline edit auto-uploaded on boot', ups.length >= 1, String(ups.length));
+    const stored = c2.fake.stores['ana@example.com'];
+    const latest = stored ? JSON.parse(Object.values(stored.files)[0].content) : null;
+    const upDescs = latest ? latest.entries.personal.map(e => e.desc) : [];
+    check('B10c Drive received the offline entry', upDescs.includes('Offline chiya'), upDescs.join(','));
+    check('B10c dirty flag cleared once synced',
+      c2.store['hisab_drive_dirty_ana@example.com'] === undefined);
+  }
+
   console.log('\n==== RESULT: ' + pass + ' passed, ' + fail + ' failed ====');
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error('HARNESS ERROR:', e); process.exit(2); });

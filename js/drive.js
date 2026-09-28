@@ -71,6 +71,31 @@
   var loginHint = null;
   /* Local edits made while Drive had no token (not yet confirmed there). */
   var unsyncedChanges = false;
+  /* The same flag, persisted in the browser: memory is wiped when the app
+   * is closed, but an entry added offline must still reach Drive later —
+   * and must never be mistaken for "in sync" on the next reconnect.
+   * Keyed per Google account so accounts never share the flag. */
+  var LS_DIRTY_PREFIX = 'hisab_drive_dirty_';
+  function dirtyKey() {
+    var p = null;
+    try { p = readProfile(); } catch (e) {}
+    var email = (p && p.email) ? String(p.email).toLowerCase() : (loginHint || 'default');
+    return LS_DIRTY_PREFIX + email;
+  }
+  function persistedDirty() {
+    try { return !!(G.localStorage && G.localStorage.getItem(dirtyKey()) === '1'); }
+    catch (e) { return false; }
+  }
+  function persistDirty(on) {
+    try {
+      if (!G.localStorage) return;
+      if (on) G.localStorage.setItem(dirtyKey(), '1');
+      else G.localStorage.removeItem(dirtyKey());
+    } catch (e) {}
+  }
+  /* Internal: local edits Drive hasn't confirmed — memory OR the
+   * persisted flag, so a restart can't fake "in sync". */
+  function hasUnsyncedChanges() { return unsyncedChanges || persistedDirty(); }
 
   /* ---------------- config / environment ---------------- */
 
@@ -292,6 +317,9 @@
       payloadProvider = provider;
       unsyncedChanges = true; /* local edits Drive hasn't confirmed yet */
     }
+    /* Persist the flag too: if the app is closed before the upload lands
+     * (offline, expired token…), the next boot still knows Drive is behind. */
+    if (payloadProvider) persistDirty(true);
     if (!accessToken) {
       /* Not signed in with Google right now — nothing to sync yet.
        * When Google needs a tap (reauthNeeded), ask for it only now that
@@ -320,6 +348,8 @@
   }
 
   function flushSave() {
+    /* An explicit flush supersedes any pending debounced save. */
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
     saveTimer = null;
     if (!accessToken || !payloadProvider) return Promise.resolve(false);
     if (!online()) { setStatus('offline'); dirtyWhileOffline = true; return Promise.resolve(false); }
@@ -329,6 +359,7 @@
     return saveRemote(payload).then(function () {
       setStatus('synced');
       unsyncedChanges = false;
+      persistDirty(false); /* Drive confirmed it — survives restarts too */
       return true;
     }).catch(function (e) {
       if (e && e.message === 'reauth-needed') setStatus('reauth');
@@ -339,7 +370,7 @@
   }
 
   /* Call after a successful load-from-Drive: we are in sync, nothing pending. */
-  function markInSync() { unsyncedChanges = false; setStatus(accessToken ? 'synced' : 'idle'); }
+  function markInSync() { unsyncedChanges = false; persistDirty(false); setStatus(accessToken ? 'synced' : 'idle'); }
 
   /* Call when a Google session is restored from the local cache without a
    * live token (fresh page load): the app opens from the cache and works
@@ -356,6 +387,7 @@
     if (!configured() || !gisLoaded()) return Promise.resolve(false);
     if (accessToken) {
       reauthNeeded = false;
+      if (hasUnsyncedChanges() && payloadProvider) scheduleSave();
       if (status === 'reauth' || status === 'disabled') setStatus('idle');
       return Promise.resolve(true);
     }
@@ -369,6 +401,9 @@
         return false;
       }
       reauthNeeded = false;
+      /* Token's back — push anything the app couldn't upload earlier
+       * (e.g. entries added offline before the app was closed). */
+      if (hasUnsyncedChanges() && payloadProvider) scheduleSave();
       setStatus('idle');
       return true;
     });
@@ -377,9 +412,11 @@
   /* Retry pending uploads when the browser comes back online, or when the
    * app is reopened after being in the background. If the only thing
    * missing is the token, take another quiet silent shot — this lets the
-   * app reconnect by itself whenever Google allows it. */
+   * app reconnect by itself whenever Google allows it. The persisted
+   * dirty flag is consulted (not just memory), so edits made offline
+   * before the app was closed still get their retry. */
   function backgroundRetry() {
-    if (reauthNeeded && !accessToken && unsyncedChanges &&
+    if (!accessToken && hasUnsyncedChanges() &&
         gisLoaded() && configured() &&
         Date.now() - lastSilentMs >= SILENT_RETRY_MS) {
       silentReconnect().then(function (ok) {
@@ -425,6 +462,7 @@
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
     payloadProvider = null;
     dirtyWhileOffline = false;
+    persistDirty(false); /* signed out — nothing pending for this account */
     reauthNeeded = false;
     lastSilentMs = 0;
     loginHint = null;
@@ -453,8 +491,9 @@
     noteReauth: noteReauth,
     silentReconnect: silentReconnect,
     hasToken: function () { return !!accessToken; },
-    /* True when local edits exist that Drive hasn't confirmed yet. */
-    hasUnsyncedChanges: function () { return unsyncedChanges; },
+    /* True when local edits exist that Drive hasn't confirmed yet —
+     * consults the persisted flag too, so a restart can't fake "in sync". */
+    hasUnsyncedChanges: hasUnsyncedChanges,
     readProfile: readProfile,
     writeProfile: writeProfile,
     /* test helpers */

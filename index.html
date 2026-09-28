@@ -274,7 +274,9 @@ try { var t = localStorage.getItem('hisab_theme'); if (t === 'light' || t === 'd
 /* Offline support: cache the app shell so Hisab opens without internet. */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {
-    navigator.serviceWorker.register('sw.js').catch(function () {});
+    navigator.serviceWorker.register('sw.js').catch(function (err) {
+      if (window.console && console.warn) console.warn('Hisab offline support unavailable:', err);
+    });
   });
 }
 </script>

@@ -524,6 +524,11 @@ function loginAs(user, quiet) {
   showView('main');
   renderAll(true);
   updateSyncPill(typeof Drive !== 'undefined' ? Drive.getStatus() : 'disabled');
+  if (user.kind === 'google' && typeof Drive !== 'undefined' && Drive.hasUnsyncedChanges()) {
+    /* Reopened with edits Drive never confirmed (added offline, app
+     * closed…): re-arm the upload — it fires once the token is back. */
+    Drive.scheduleSave(drivePayload);
+  }
   if (!quiet) toast('Namaste, ' + displayName());
 }
 
@@ -719,7 +724,11 @@ function googleSignInFlow(hint) {
       updateSyncPill(Drive.getStatus());
       if (keepLocal) {
         /* Reconnected after offline edits: push this device's newer
-         * records up instead of announcing a sync from Drive. */
+         * records up instead of announcing a sync from Drive.
+         * scheduleSave re-arms the persisted dirty flag first, then
+         * flushSave uploads right away — if it fails, the flag survives
+         * and the upload retries later. */
+        Drive.scheduleSave(drivePayload);
         Drive.flushSave();
         toast('Reconnected — uploading your latest changes to Drive.');
       } else {

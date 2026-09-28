@@ -12,7 +12,7 @@
  * ========================================================================= */
 'use strict';
 
-var CACHE = 'hisab-shell-v6';
+var CACHE = 'hisab-shell-v7';
 
 var ASSETS = [
   './',
@@ -35,7 +35,13 @@ var ASSETS = [
 self.addEventListener('install', function (e) {
   e.waitUntil(
     caches.open(CACHE)
-      .then(function (c) { return c.addAll(ASSETS); })
+      .then(function (c) {
+        /* Cache each asset on its own: one missing file must not kill
+         * the whole offline install. */
+        return Promise.all(ASSETS.map(function (a) {
+          return c.add(a).catch(function () { /* keep going */ });
+        }));
+      })
       .then(function () { return self.skipWaiting(); })
   );
 });
