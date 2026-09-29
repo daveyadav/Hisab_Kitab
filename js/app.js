@@ -454,6 +454,22 @@ function boot() {
   if (typeof Drive !== 'undefined') {
     Drive.onStatus(updateSyncPill);
     renderGoogleButtons();
+    var snb = $('#sync-now-btn');
+    if (snb) snb.addEventListener('click', manualSync);
+    /* Background auto-pull: one tap's token lasts about an hour — while it
+     * lives, other devices' edits arrive on their own. unref() is a no-op
+     * in browsers; under node (tests) it lets the process exit instead of
+     * idling on the timer. */
+    var autoPullTimer = setInterval(function () { maybeAutoPull(); }, 60000);
+    if (autoPullTimer && typeof autoPullTimer.unref === 'function') { try { autoPullTimer.unref(); } catch (e) {} }
+    if (typeof document !== 'undefined' && document.addEventListener) {
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') maybeAutoPull();
+      });
+    }
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener('online', function () { maybeAutoPull(); });
+    }
     /* Google's script loads async — re-check until it arrives or gives up. */
     var tries = 0, lastState = Drive.uiState();
     var timer = setInterval(function () {
@@ -739,6 +755,52 @@ function googleErrorText(err) {
 }
 
 /* Full Google sign-in flow: token → profile → load Drive records → enter. */
+/* Apply a snapshot downloaded from Drive: replace the local entries,
+ * adopt the synced nickname, re-render. Shared by the manual sync tap
+ * and the background auto-pull. Returns true when applied. */
+function applyRemoteNickname(remote) {
+  if (remote && remote.profile && typeof remote.profile.nickname === 'string') {
+    var local = loadProfileFor(accountStoreKey());
+    local.nickname = cleanNickname(remote.profile.nickname);
+    saveJSON(profileKey(), local);
+  }
+}
+function applyRemoteEntries(remote) {
+  if (!remote || !validEntriesShape(remote.entries)) return false;
+  S.entries = remote.entries;
+  if (!Array.isArray(S.entries.personal)) S.entries.personal = [];
+  if (!Array.isArray(S.entries.business)) S.entries.business = [];
+  saveJSON(dataKey(), S.entries);
+  applyRemoteNickname(remote);
+  renderAll(false);
+  return true;
+}
+
+/* One-tap sync from the dashboard icon or the pill: interactive sign-in
+ * with the account as login_hint, so Google skips the account chooser.
+ * Pushes this device's pending uploads, then pulls the latest from Drive. */
+function manualSync() {
+  if (!S.user || S.user.kind !== 'google' || typeof Drive === 'undefined') return;
+  if (Drive.getStatus() === 'syncing') return; /* already going */
+  googleSignInFlow(S.user.id);
+}
+
+/* Background auto-sync: while we hold a live Drive token (one tap gives
+ * about an hour), quietly pull other devices' newer edits — no popup,
+ * no taps. Runs every minute while the page is visible, and whenever the
+ * tab comes forward or the network returns. */
+function maybeAutoPull() {
+  if (!S.user || S.user.kind !== 'google' || typeof Drive === 'undefined') return;
+  if (typeof document !== 'undefined') {
+    if (document.visibilityState === 'hidden') return;
+    var em = document.querySelector ? document.querySelector('#entry-modal') : null;
+    if (em && !em.hidden) return; /* don't yank the khata out from under an open form */
+  }
+  Drive.fetchRemoteIfNewer().then(function (remote) {
+    if (remote) applyRemoteEntries(remote);
+  });
+}
+
 function googleSignInFlow(hint) {
   if (typeof Drive === 'undefined' || Drive.uiState() !== 'ready') {
     toast(googleWhyNot(typeof Drive === 'undefined' ? 'no-client-id' : Drive.uiState()));
@@ -761,14 +823,11 @@ function googleSignInFlow(hint) {
       var keepLocal = Drive.hasUnsyncedChanges();
       S.user = user;
       if (!keepLocal) {
-        var entries = (remote && validEntriesShape(remote.entries)) ? remote.entries : blankEntries();
-        saveJSON(dataKey(), entries);
-      }
-      /* Synced nickname wins over the local cache when Drive has one. */
-      if (remote && remote.profile && typeof remote.profile.nickname === 'string') {
-        var local = loadProfileFor(accountStoreKey());
-        local.nickname = cleanNickname(remote.profile.nickname);
-        saveJSON(profileKey(), local);
+        if (remote) applyRemoteEntries(remote);
+        else saveJSON(dataKey(), blankEntries());
+      } else {
+        /* Synced nickname still wins over the local cache when Drive has one. */
+        applyRemoteNickname(remote);
       }
       Drive.writeProfile(profile);
       loginAs(user, true);
@@ -802,8 +861,16 @@ function googleSignInFlow(hint) {
 var _pillKey = null;
 function updateSyncPill(s) {
   var pill = $('#sync-pill');
+  var snb = $('#sync-now-btn');
+  var isGoogle = !!(S.user && S.user.kind === 'google');
+  /* Dashboard sync button: offered for every Google session. Spins while
+   * a sync is running. */
+  if (snb) {
+    snb.hidden = !isGoogle;
+    if (snb.classList) snb.classList.toggle('spin', s === 'syncing');
+  }
   if (!pill) return;
-  if (!S.user || S.user.kind !== 'google' || s === 'disabled') {
+  if (!isGoogle || s === 'disabled') {
     if (_pillKey === 'hidden') return;
     _pillKey = 'hidden';
     pill.hidden = true; pill.onclick = null; return;
@@ -823,7 +890,9 @@ function updateSyncPill(s) {
   pill.hidden = false;
   pill.innerHTML = '<span class="dot"></span>' + esc(m[0]);
   pill.className = 'sync-pill ' + m[1];
-  pill.onclick = (s === 'reauth') ? function () { googleSignInFlow(S.user && S.user.id); } : null;
+  /* The pill itself is a sync button in every state: one tap, no account
+   * chooser (the account goes as login_hint). */
+  pill.onclick = function () { manualSync(); };
 }
 
 /* ---------------- entries ---------------- */
@@ -2175,7 +2244,7 @@ document.addEventListener('DOMContentLoaded', function () {
     googleSignInFlow(prof && prof.email);
   });
   var rcBtn = $('#account-reconnect');
-  if (rcBtn) rcBtn.addEventListener('click', function () { closeAccountMenu(); googleSignInFlow(); });
+  if (rcBtn) rcBtn.addEventListener('click', function () { closeAccountMenu(); googleSignInFlow(S.user && S.user.id); });
 
   var rf = $('#report-form');
   if (rf) {

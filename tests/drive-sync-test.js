@@ -876,6 +876,124 @@ function drivePayloadFor(email, descs) {
       JSON.stringify(c.fake.tokenRequests));
   }
 
+  // B11: dashboard sync button + background auto-pull.
+  function seedRemoteAna(c, amount) {
+    c.fake.stores['ana@example.com'] = { files: { file1: {
+      name: 'hisab-data.json',
+      content: JSON.stringify({ app: 'hisab', version: 4, updatedAt: Date.now(),
+        entries: { personal: [
+          { id: 'e1', ts: Date.now(), type: 'cash_purchase', desc: 'Old dal', amount: amount, party: '', note: '' },
+        ], business: [] } }),
+      modifiedTime: new Date(Date.now() + 5000).toISOString(), /* server time, clearly newer */
+    } } };
+  }
+  function bootGoogleAna(c) {
+    c.store['hisab_session_v2'] = JSON.stringify({ kind: 'google', id: 'ana@example.com' });
+    c.store['hisab_google_profile'] = JSON.stringify({ email: 'ana@example.com', name: 'Ana', picture: '' });
+    c.store['hisab_data_v2_g_ana@example.com'] = JSON.stringify({ personal: [
+      { id: 'e1', ts: Date.now(), type: 'cash_purchase', desc: 'Old dal', amount: 150, party: '', note: '' },
+    ], business: [] });
+    c.fake.currentEmail = 'ana@example.com';
+    c.fireReady();
+    c.fireLoad();
+    c.$('#entry-modal').hidden = true; /* the test stub defaults hidden=false; real HTML hides modals */
+  }
+
+  // B11a: the dashboard sync button is visible for Google, one tap pulls,
+  // and the tap carries login_hint so Google skips the account chooser.
+  {
+    const c = makeContext();
+    bootGoogleAna(c);
+    await tick(900);
+    check('B11a sync button visible for Google sessions', c.$('#sync-now-btn').hidden === false);
+    seedRemoteAna(c, 800);
+    c.$('#sync-now-btn').click(); /* the tap */
+    await tick(1500);
+    const amt = c.sandbox.S.entries.personal[0].amount;
+    check('B11a one tap pulled the 800 entry', amt === 800, String(amt));
+    const tr = c.fake.tokenRequests;
+    check('B11a the tap sent login_hint so Google skips the chooser',
+      tr.length === 1 && tr[0].hint === 'ana@example.com' && tr[0].prompt !== 'none', JSON.stringify(tr));
+    check('B11a sync button hidden for device-only accounts', (function () {
+      const c2 = makeContext();
+      c2.fireReady(); c2.fireLoad();
+      c2.$('#entry-modal').hidden = true;
+      c2.sandbox.loginAs({ kind: 'local', id: 'kaza', displayName: 'kaza' }, true);
+      return c2.$('#sync-now-btn').hidden === true;
+    })());
+  }
+
+  // B11b: background auto-pull — no taps once the token is live.
+  {
+    const c = makeContext();
+    bootGoogleAna(c);
+    await tick(900);
+    const Drive = c.windowStub.Drive;
+    Drive.signIn('ana@example.com');
+    await tick(800);
+    check('B11b token live after one tap', Drive.hasToken() === true);
+    seedRemoteAna(c, 800); /* …the phone uploads a newer snapshot… */
+    const before = c.fake.tokenRequests.length;
+    c.sandbox.maybeAutoPull(); /* no tap — background */
+    await tick(800);
+    check('B11b auto-pull brought the 800 entry with zero new token requests',
+      c.sandbox.S.entries.personal[0].amount === 800 && c.fake.tokenRequests.length === before,
+      c.sandbox.S.entries.personal[0].amount + '/' + c.fake.tokenRequests.length);
+    c.sandbox.maybeAutoPull();
+    await tick(800);
+    check('B11b second auto-pull is a no-op (already seen)',
+      c.sandbox.S.entries.personal[0].amount === 800);
+  }
+
+  // B11c: auto-pull never clobbers this device's own pending edits,
+  // and stays out of the way while a form is open or the tab is hidden.
+  {
+    const c = makeContext();
+    bootGoogleAna(c);
+    await tick(900);
+    const Drive = c.windowStub.Drive;
+    Drive.signIn('ana@example.com');
+    await tick(800);
+    c.store['hisab_drive_dirty_ana@example.com'] = '1'; /* local edits pending */
+    seedRemoteAna(c, 800);
+    c.sandbox.maybeAutoPull();
+    await tick(800);
+    check('B11c auto-pull skipped while local edits are pending',
+      c.sandbox.S.entries.personal[0].amount === 150,
+      String(c.sandbox.S.entries.personal[0].amount));
+    delete c.store['hisab_drive_dirty_ana@example.com'];
+    c.$('#entry-modal').hidden = false; /* form open */
+    c.sandbox.maybeAutoPull();
+    await tick(800);
+    check('B11c auto-pull skipped while the entry form is open',
+      c.sandbox.S.entries.personal[0].amount === 150);
+    c.$('#entry-modal').hidden = true;
+    c.documentStub.visibilityState = 'hidden'; /* tab in background */
+    c.sandbox.maybeAutoPull();
+    await tick(800);
+    check('B11c auto-pull skipped while the tab is hidden',
+      c.sandbox.S.entries.personal[0].amount === 150);
+    c.documentStub.visibilityState = 'visible';
+    c.sandbox.maybeAutoPull();
+    await tick(800);
+    check('B11c auto-pull applies once the way is clear',
+      c.sandbox.S.entries.personal[0].amount === 800,
+      String(c.sandbox.S.entries.personal[0].amount));
+  }
+
+  // B11d: account menu "Sync now" also skips the chooser.
+  {
+    const c = makeContext();
+    bootGoogleAna(c);
+    await tick(900);
+    c.sandbox.openAccountMenu();
+    c.$('#account-reconnect').click();
+    await tick(1500);
+    const tr = c.fake.tokenRequests;
+    check('B11d account Sync now sent login_hint',
+      tr.length === 1 && tr[0].hint === 'ana@example.com', JSON.stringify(tr));
+  }
+
   // B10d: the account modal shows an honest offline-readiness line
   {
     const c = makeContext();

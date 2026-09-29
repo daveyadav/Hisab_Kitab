@@ -254,16 +254,61 @@
   }
 
   /* Returns the parsed remote payload, or null when there is none yet. */
+  function downloadFile(id) {
+    return api('/drive/v3/files/' + encodeURIComponent(id) + '?alt=media', { method: 'GET' })
+      .then(function (res) {
+        if (!res.ok) throw new Error('drive-download-failed');
+        return res.json();
+      });
+  }
+
+  /* What we've already applied or uploaded — guards the background pull so
+   * we only download when another device actually wrote something newer.
+   * modifiedTime comes from Drive's servers (immune to device clock skew);
+   * the content hash is the source of truth when timestamps are unclear. */
+  var lastSeenModified = 0;
+  var lastSeenHash = '';
+  function hashEntries(entries) {
+    var s = '';
+    try { s = JSON.stringify({ personal: (entries && entries.personal) || [], business: (entries && entries.business) || [] }); } catch (e) {}
+    var h = 0;
+    for (var i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    return 'h' + (h >>> 0).toString(36) + 'l' + s.length.toString(36);
+  }
+  function noteSeenFile(f, remote) {
+    if (f && f.modifiedTime) { var mt = new Date(f.modifiedTime).getTime(); if (mt) lastSeenModified = mt; }
+    if (remote) { var h = hashEntries(remote.entries); if (h) lastSeenHash = h; }
+  }
+  function noteUploaded(payload) { var h = hashEntries(payload && payload.entries); if (h) lastSeenHash = h; }
+
   function loadRemote() {
     return listFile().then(function (f) {
       if (!f) { fileId = null; return null; }
       fileId = f.id;
-      return api('/drive/v3/files/' + encodeURIComponent(f.id) + '?alt=media', { method: 'GET' })
-        .then(function (res) {
-          if (!res.ok) throw new Error('drive-download-failed');
-          return res.json();
-        });
+      return downloadFile(f.id).then(function (remote) { noteSeenFile(f, remote); return remote; });
     });
+  }
+
+  /* Background pull: while we hold a live token (one Google tap gives about
+   * an hour) and this device has no edits of its own pending, check whether
+   * another device uploaded something newer and return that payload.
+   * Resolves null otherwise. Never opens a popup; never clobbers
+   * unsynced local edits; failures stay quiet. */
+  function fetchRemoteIfNewer() {
+    if (!accessToken || !online() || !configured()) return Promise.resolve(null);
+    if (hasUnsyncedChanges()) return Promise.resolve(null);
+    return listFile().then(function (f) {
+      if (!f || !f.id) return null;
+      var mt = f.modifiedTime ? new Date(f.modifiedTime).getTime() : 0;
+      if (mt && lastSeenModified && mt <= lastSeenModified) return null; /* cheap pre-check */
+      return downloadFile(f.id).then(function (remote) {
+        if (f.modifiedTime) { var m2 = new Date(f.modifiedTime).getTime(); if (m2) lastSeenModified = m2; }
+        var h = hashEntries(remote && remote.entries);
+        if (!h || h === lastSeenHash) return null;
+        lastSeenHash = h;
+        return remote;
+      });
+    }).catch(function () { return null; });
   }
 
   function createFile(payload) {
@@ -348,6 +393,7 @@
       setStatus('synced');
       unsyncedChanges = false;
       persistDirty(false); /* Drive confirmed it — survives restarts too */
+      noteUploaded(payload);
       return true;
     }).catch(function (e) {
       if (e && e.message === 'reauth-needed') setStatus('reauth');
@@ -450,6 +496,7 @@
     hasUnsyncedChanges: hasUnsyncedChanges,
     readProfile: readProfile,
     writeProfile: writeProfile,
+    fetchRemoteIfNewer: fetchRemoteIfNewer,
     /* test helpers */
     _setDebounceMs: function (ms) { DEBOUNCE_MS = ms; },
     _reset: function () {
@@ -458,6 +505,7 @@
       payloadProvider = null; dirtyWhileOffline = false; pendingResolve = null;
       loginHint = null;
       unsyncedChanges = false;
+      lastSeenModified = 0; lastSeenHash = '';
       statusListeners = []; status = 'disabled';
     }
   };

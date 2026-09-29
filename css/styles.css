@@ -265,6 +265,11 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
 .icon-btn:hover{background:var(--surface-2)}
 .icon-btn:active{transform:scale(.94)}
 .icon-btn svg{width:20px;height:20px}
+/* Dashboard sync button: compact, spins while a sync is running. */
+.sync-btn{width:36px;height:36px;border-radius:11px}
+.sync-btn.spin{pointer-events:none;opacity:.75}
+.sync-btn.spin svg{animation:syncrot 1.1s linear infinite}
+@keyframes syncrot{to{transform:rotate(360deg)}}
 
 /* ================= layout ================= */
 .content{flex:1;width:100%;max-width:1120px;margin:0 auto;padding:18px 16px 140px}
