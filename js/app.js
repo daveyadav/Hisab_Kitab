@@ -898,8 +898,15 @@ function updateSyncPill(s) {
     idle:    ['Ready', '']
   };
   var m = map[s] || map.idle;
+  var label = m[0];
+  /* Narrow phones get short labels so the pill keeps one fixed width and
+   * the topbar never jumps/shakes when the sync state changes. */
+  if (window.innerWidth <= 520) {
+    label = { synced: 'Synced ✓', syncing: 'Syncing…', offline: 'Offline',
+              reauth: 'Waiting', error: 'Sync error', idle: 'Ready' }[s] || 'Ready';
+  }
   pill.hidden = false;
-  pill.innerHTML = '<span class="dot"></span>' + esc(m[0]);
+  pill.innerHTML = '<span class="dot"></span><span class="txt">' + esc(label) + '</span>';
   pill.className = 'sync-pill ' + m[1];
   /* The pill itself is a sync button in every state: one tap, no account
    * chooser (the account goes as login_hint). */

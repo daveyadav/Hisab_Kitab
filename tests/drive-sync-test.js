@@ -1060,6 +1060,32 @@ function drivePayloadFor(email, descs) {
       String(c.sandbox.S.entries.personal[0].amount));
   }
 
+  // B13: mobile pill — short fixed labels, no layout shift.
+  {
+    const c = makeContext();
+    bootGoogleAna(c);
+    await tick(900);
+    c.windowStub.innerWidth = 360; /* a phone */
+    const Drive = c.windowStub.Drive;
+    Drive.signIn('ana@example.com');
+    await tick(800);
+    Drive.markInSync();
+    const pill = c.$('#sync-pill');
+    c.sandbox.updateSyncPill('offline');
+    check('B13a narrow screen uses the short offline label',
+      />Offline</.test(pill.innerHTML) && !/will sync/.test(pill.innerHTML), pill.innerHTML);
+    c.sandbox.updateSyncPill('reauth');
+    check('B13b narrow screen uses the short waiting label',
+      />Waiting</.test(pill.innerHTML) && !/to sync/.test(pill.innerHTML), pill.innerHTML);
+    c.sandbox.updateSyncPill('syncing');
+    check('B13c pill text wrapped for ellipsis control',
+      /class="txt"/.test(pill.innerHTML), pill.innerHTML);
+    c.windowStub.innerWidth = 1280; /* desktop keeps full labels */
+    c.sandbox.updateSyncPill('offline');
+    check('B13d wide screen keeps the full offline label',
+      /Offline — will sync/.test(pill.innerHTML), pill.innerHTML);
+  }
+
   // B10d: the account modal shows an honest offline-readiness line
   {
     const c = makeContext();

@@ -247,6 +247,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
   box-shadow:var(--shadow-sm);
 }
 .sync-pill .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+.sync-pill .txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .sync-pill.ok{background:var(--accent-soft);border-color:transparent;color:var(--accent-ink)}
 .sync-pill.ok .dot{background:var(--accent)}
 .sync-pill.busy{background:var(--gold-soft);border-color:transparent;color:var(--ink-2)}
@@ -268,7 +269,26 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
 /* Dashboard sync button: compact, spins while a sync is running. */
 .sync-btn{width:36px;height:36px;border-radius:11px}
 .sync-btn.spin{pointer-events:none;opacity:.75}
-.sync-btn.spin svg{animation:syncrot 1.1s linear infinite}
+.sync-btn.spin svg{animation:syncrot 1.1s linear infinite;transform-origin:center}
+
+/* ============ mobile topbar: compact, no layout shift ============
+ * Phones (<=520px) get a fixed-width sync pill with short labels, an
+ * avatar-only account chip, and tighter spacing — the row fits 360px
+ * screens and never jumps when the sync state changes. */
+@media (max-width:520px){
+  .topbar-inner{padding:10px 12px 10px;gap:10px}
+  .topbar-row{gap:8px}
+  .brand-inline{font-size:1.02rem;gap:8px}
+  .brand-inline .logo-sm{width:28px;height:28px}
+  .brand-inline small{font-size:.62rem}
+  .sync-pill{
+    min-width:0;width:92px;flex:none;padding:6px 8px;gap:6px;
+    font-size:.68rem;justify-content:center;
+  }
+  .sync-btn{width:34px;height:34px;flex:none}
+  .user-chip{max-width:none;padding:4px;gap:0;flex:none}
+  .user-chip span.nm{display:none}
+}
 @keyframes syncrot{to{transform:rotate(360deg)}}
 
 /* ================= layout ================= */
