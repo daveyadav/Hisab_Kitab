@@ -1,0 +1,40 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>gis probe</title></head>
+<body style="font-family:monospace;padding:16px">
+<h3>GIS prompt:none probe</h3>
+<pre id="log" style="white-space:pre-wrap;border:1px solid #ccc;padding:8px;min-height:200px"></pre>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+function log(m){ var el=document.getElementById('log'); el.textContent += m + '\n'; }
+log('probe loaded at ' + new Date().toISOString());
+log('cookies enabled: ' + navigator.cookieEnabled);
+var t = setInterval(function(){
+  if (!(window.google && google.accounts && google.accounts.oauth2)) return;
+  clearInterval(t);
+  log('GIS ready');
+  try {
+    var c = google.accounts.oauth2.initTokenClient({
+      client_id: '434056557055-f71840fi74pdhpevl5fvdllilt2jt1fq.apps.googleusercontent.com',
+      scope: 'https://www.googleapis.com/auth/drive.appdata',
+      callback: function(r){ log('CALLBACK: ' + JSON.stringify(r).slice(0,200)); },
+      error_callback: function(e){ log('ERROR_CB: ' + JSON.stringify(e).slice(0,200)); }
+    });
+    log('requestAccessToken({prompt:none}) ...');
+    c.requestAccessToken({prompt:'none', hint:'daveyadav007@gmail.com'});
+    log('requestAccessToken returned (sync part done)');
+  } catch(e){ log('THREW: ' + (e && e.message)); }
+  setTimeout(function(){
+    var fr = document.querySelectorAll('iframe');
+    log('iframes in document: ' + fr.length);
+    for (var i=0;i<fr.length;i++){
+      var s = fr[i], r = s.getBoundingClientRect();
+      log('iframe['+i+'] src=' + (s.src||'').slice(0,140));
+      log('iframe['+i+'] rect=' + Math.round(r.width)+'x'+Math.round(r.height)+' at '+Math.round(r.left)+','+Math.round(r.top)+' display='+getComputedStyle(s).display);
+    }
+    log('PROBE DONE');
+  }, 8000);
+}, 300);
+setTimeout(function(){ if(!window.__gisDone) log('WATCHDOG: GIS never became ready'); }, 20000);
+</script>
+</body></html>
