@@ -837,6 +837,45 @@ function drivePayloadFor(email, descs) {
       c2.fake.uploadCalls().length >= 1, String(c2.fake.uploadCalls().length));
   }
 
+  // B10h: "Sync now" is offered even with nothing pending, and pulls the
+  // other device's edits from Drive (refresh alone never downloads).
+  {
+    const c = makeContext();
+    c.store['hisab_session_v2'] = JSON.stringify({ kind: 'google', id: 'ana@example.com' });
+    c.store['hisab_google_profile'] = JSON.stringify({ email: 'ana@example.com', name: 'Ana', picture: '' });
+    c.store['hisab_data_v2_g_ana@example.com'] = JSON.stringify({ personal: [
+      { id: 'e1', ts: Date.now(), type: 'cash_purchase', desc: 'Old dal', amount: 150, party: '', note: '' },
+    ], business: [] });
+    /* …the phone edits the entry and uploads: Drive is now newer. */
+    c.fake.stores['ana@example.com'] = { files: { file1: {
+      name: 'hisab-data.json',
+      content: JSON.stringify({ app: 'hisab', version: 4, updatedAt: Date.now(),
+        entries: { personal: [
+          { id: 'e1', ts: Date.now(), type: 'cash_purchase', desc: 'Old dal', amount: 500, party: '', note: '' },
+        ], business: [] } }),
+      modifiedTime: new Date().toISOString(),
+    } } };
+    c.fake.currentEmail = 'ana@example.com';
+    c.fireReady();
+    c.fireLoad();
+    await tick(900);
+    const before = c.sandbox.S.entries.personal[0].amount;
+    check('B10h laptop still shows its own saved copy after refresh',
+      before === 150, String(before));
+    check('B10h refresh made zero token requests', c.fake.tokenRequests.length === 0);
+    c.sandbox.openAccountMenu();
+    check('B10h Sync now offered with nothing pending',
+      c.$('#account-reconnect').hidden === false);
+    c.$('#account-reconnect').click(); /* the tap: interactive, then pull */
+    await tick(1500);
+    const after = c.sandbox.S.entries.personal[0].amount;
+    check('B10h Sync now pulled the phone edit from Drive',
+      after === 500, String(after));
+    check('B10h the pull used one interactive token request, nothing silent',
+      c.fake.tokenRequests.length === 1 && c.fake.tokenRequests[0].prompt !== 'none',
+      JSON.stringify(c.fake.tokenRequests));
+  }
+
   // B10d: the account modal shows an honest offline-readiness line
   {
     const c = makeContext();

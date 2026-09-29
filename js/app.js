@@ -597,7 +597,10 @@ function openAccountMenu(focusNickname) {
     ? 'Shown in greetings and the top bar. Syncs to your other devices with your khata.'
     : 'Shown in greetings and the top bar. Leave empty to use “' + S.user.displayName + '”.';
   var rc = $('#account-reconnect');
-  if (rc) rc.hidden = !(S.user.kind === 'google' && typeof Drive !== 'undefined' && Drive.getStatus() === 'reauth');
+  /* Always offered for Google sessions: with nothing pending it pulls the
+   * latest from Drive (other devices' edits); with pending uploads it
+   * pushes this device's changes up. */
+  if (rc) rc.hidden = !(S.user.kind === 'google' && typeof Drive !== 'undefined');
   updateOfflineLine();
   openModal('#account-modal');
   if (focusNickname) setTimeout(function () { var i = $('#account-nickname'); if (i && i.focus) i.focus(); }, 260);
