@@ -81,7 +81,7 @@
 }
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;padding:0}
+html,body{margin:0;padding:0;overflow-x:hidden;overflow-x:clip}
 body{
   background:var(--bg);
   background-image:radial-gradient(1200px 520px at 50% -180px,var(--bg-tint),transparent 70%);
