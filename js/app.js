@@ -645,9 +645,16 @@ function updateOfflineLine(opts) {
   var done = false;
   function finish(text) { if (!done) { done = true; el.textContent = text; } }
   function report(reg) {
-    finish(reg && (reg.active || reg.waiting || reg.installing)
-      ? 'Offline app: ready ✓ — opens without internet.'
-      : 'Offline app: not ready yet — open it once more while online.');
+    var installed = !!(reg && (reg.active || reg.waiting || reg.installing));
+    var controlling = false;
+    try { controlling = !!(navigator.serviceWorker.controller); } catch (e) { /* ignore */ }
+    if (installed && controlling) {
+      finish('Offline app: ready ✓ — opens without internet.');
+    } else if (installed) {
+      finish('Offline app: almost ready — close and reopen the app once.');
+    } else {
+      finish('Offline app: not ready yet — open it once more while online.');
+    }
   }
   function check() {
     var p = null;

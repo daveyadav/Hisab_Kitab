@@ -779,11 +779,20 @@ function drivePayloadFor(email, descs) {
       /not supported/.test(c.$('#offline-ready').textContent), c.$('#offline-ready').textContent);
     c.windowStub.navigator.serviceWorker = {
       getRegistration: async () => ({ active: { state: 'activated' } }),
+      controller: { state: 'activated' }, /* this page load is SW-controlled */
     };
     c.sandbox.updateOfflineLine();
     await tick(50);
-    check('B10d offline line shows ready when a worker is active',
+    check('B10d offline line shows ready when a worker is active and controlling',
       /ready ✓/.test(c.$('#offline-ready').textContent), c.$('#offline-ready').textContent);
+    c.windowStub.navigator.serviceWorker = {
+      getRegistration: async () => ({ active: { state: 'activated' } }),
+      controller: null, /* installed, but this load isn't controlled yet */
+    };
+    c.sandbox.updateOfflineLine();
+    await tick(50);
+    check('B10d offline line says almost-ready when installed but not controlling',
+      /almost ready/.test(c.$('#offline-ready').textContent), c.$('#offline-ready').textContent);
     c.windowStub.navigator.serviceWorker = { getRegistration: async () => null };
     c.sandbox.updateOfflineLine();
     await tick(50);
@@ -800,6 +809,7 @@ function drivePayloadFor(email, descs) {
         ? new Promise(function () {})                       // never settles: slow/stuck installer
         : Promise.resolve({ active: { state: 'activated' } }),
       register: async () => ({ installing: { state: 'installing' } }),
+      controller: { state: 'activated' },
     };
     c.sandbox.updateOfflineLine({ nudgeDelay: 30, recheckDelay: 30, deadlineDelay: 60 });
     await tick(15);
