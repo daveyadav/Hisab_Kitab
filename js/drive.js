@@ -410,6 +410,13 @@
    * Drive is in play, the app works from the cache — show Ready. */
   function noteIdle() { if (status === 'disabled') setStatus('idle'); }
 
+  /* Interactive sign-in failed or was cancelled: leave an honest state
+   * instead of a stuck "Syncing…". */
+  function noteFailed() {
+    if (accessToken) setStatus('error');
+    else setStatus(hasUnsyncedChanges() ? 'reauth' : 'idle');
+  }
+
   /* Call when a Google session is restored from the local cache without a
    * live token (fresh page load): the app opens from the cache; the user
    * taps once to reconnect when a sync is actually due. */
@@ -474,6 +481,26 @@
     }
   }
 
+  /* Sync right now using the current token — never opens a popup.
+   * Pushes pending uploads, then pulls anything newer. Resolves
+   * { action, pushed, remote }. Callers check hasToken() afterwards: if
+   * the token died mid-sync, fall back to the interactive flow. */
+  function syncNow() {
+    if (!accessToken || !configured()) return Promise.resolve({ action: 'no-token', pushed: false, remote: null });
+    if (!online()) return Promise.resolve({ action: 'offline', pushed: false, remote: null });
+    if (status === 'syncing') return Promise.resolve({ action: 'busy', pushed: false, remote: null });
+    setStatus('syncing');
+    var push = hasUnsyncedChanges() ? flushSave() : Promise.resolve(false);
+    return push.then(function (pushed) {
+      return fetchRemoteIfNewer().then(function (remote) {
+        /* flushSave / fetchRemoteIfNewer set their own statuses on the way
+         * (synced, reauth, …); if nothing happened we're simply done. */
+        if (status === 'syncing') setStatus(accessToken ? 'synced' : 'reauth');
+        return { action: 'ok', pushed: !!pushed, remote: remote || null };
+      });
+    });
+  }
+
   /* ---------------- public API ---------------- */
 
   G.Drive = {
@@ -485,11 +512,13 @@
     signIn: signIn,
     signOut: signOut,
     loadRemote: loadRemote,
+    syncNow: syncNow,
     scheduleSave: scheduleSave,
     flushSave: flushSave,
     markInSync: markInSync,
     noteReauth: noteReauth,
     noteIdle: noteIdle,
+    noteFailed: noteFailed,
     hasToken: function () { return !!accessToken; },
     /* True when local edits exist that Drive hasn't confirmed yet —
      * consults the persisted flag too, so a restart can't fake "in sync". */

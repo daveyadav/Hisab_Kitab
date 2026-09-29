@@ -641,6 +641,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
   .portal-switch{order:1;width:260px;margin-left:18px}
   .topbar-row .spacer{order:2}
   .topbar-row .sync-pill{order:3}
+  .topbar-row .sync-btn{order:3}
   .topbar-row .user-chip{order:4}
 }
 /* Entry sheet: on narrow phones the date+time picker is squeezed next to

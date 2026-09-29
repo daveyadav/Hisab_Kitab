@@ -931,6 +931,7 @@ function drivePayloadFor(email, descs) {
     const Drive = c.windowStub.Drive;
     Drive.signIn('ana@example.com');
     await tick(800);
+    Drive.markInSync(); /* googleSignInFlow settles here on success; the raw signIn leaves 'syncing' */
     check('B11b token live after one tap', Drive.hasToken() === true);
     seedRemoteAna(c, 800); /* …the phone uploads a newer snapshot… */
     const before = c.fake.tokenRequests.length;
@@ -992,6 +993,71 @@ function drivePayloadFor(email, descs) {
     const tr = c.fake.tokenRequests;
     check('B11d account Sync now sent login_hint',
       tr.length === 1 && tr[0].hint === 'ana@example.com', JSON.stringify(tr));
+  }
+
+  // B12: popup-free sync while the token is live.
+  // B12a: tap with a live token pulls with zero new token requests.
+  {
+    const c = makeContext();
+    bootGoogleAna(c);
+    await tick(900);
+    const Drive = c.windowStub.Drive;
+    Drive.signIn('ana@example.com');
+    await tick(800);
+    Drive.markInSync(); /* googleSignInFlow settles here on success; the raw signIn leaves 'syncing' */
+    seedRemoteAna(c, 800);
+    c.$('#sync-now-btn').click(); /* token live → no popup */
+    await tick(1200);
+    check('B12a tap with live token pulled the 800 entry',
+      c.sandbox.S.entries.personal[0].amount === 800,
+      String(c.sandbox.S.entries.personal[0].amount));
+    check('B12a no new token request — zero popups',
+      c.fake.tokenRequests.length === 1, String(c.fake.tokenRequests.length));
+  }
+
+  // B12b: tap with a live token pushes pending local edits, still no popup.
+  // (edit made offline → back online → tap: the real-world push path)
+  {
+    const c = makeContext();
+    bootGoogleAna(c);
+    await tick(900);
+    const Drive = c.windowStub.Drive;
+    Drive.signIn('ana@example.com');
+    await tick(800);
+    Drive.markInSync(); /* googleSignInFlow settles here on success; the raw signIn leaves 'syncing' */
+    c.windowStub.navigator.onLine = false; /* edit made while offline */
+    Drive.scheduleSave(c.sandbox.drivePayload);
+    await tick(50);
+    c.windowStub.navigator.onLine = true; /* back online */
+    c.$('#sync-now-btn').click();
+    await tick(1200);
+    check('B12b pending edit uploaded with no popup',
+      c.fake.uploadCalls().length >= 1 && c.fake.tokenRequests.length === 1,
+      c.fake.uploadCalls().length + '/' + c.fake.tokenRequests.length);
+    check('B12b pill shows Synced after the quiet sync',
+      /Synced/.test(c.$('#sync-pill').innerHTML), c.$('#sync-pill').innerHTML);
+  }
+
+  // B12c: token dies mid-sync → falls back to the one-tap popup (with hint).
+  {
+    const c = makeContext();
+    bootGoogleAna(c);
+    await tick(900);
+    const Drive = c.windowStub.Drive;
+    Drive.signIn('ana@example.com');
+    await tick(800);
+    Drive.markInSync(); /* googleSignInFlow settles here on success; the raw signIn leaves 'syncing' */
+    c.fake.failOnce401.add(c.fake.lastToken); /* Google expired the token */
+    seedRemoteAna(c, 800);
+    c.$('#sync-now-btn').click();
+    await tick(1500);
+    const tr = c.fake.tokenRequests;
+    check('B12c expired token falls back to one interactive request with hint',
+      tr.length === 2 && tr[1].hint === 'ana@example.com' && tr[1].prompt !== 'none',
+      JSON.stringify(tr));
+    check('B12c the fallback still pulled the 800 entry',
+      c.sandbox.S.entries.personal[0].amount === 800,
+      String(c.sandbox.S.entries.personal[0].amount));
   }
 
   // B10d: the account modal shows an honest offline-readiness line

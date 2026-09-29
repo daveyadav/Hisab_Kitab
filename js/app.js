@@ -776,12 +776,22 @@ function applyRemoteEntries(remote) {
   return true;
 }
 
-/* One-tap sync from the dashboard icon or the pill: interactive sign-in
- * with the account as login_hint, so Google skips the account chooser.
+/* One-tap sync from the dashboard icon, the pill, or the account menu.
+ * When the token from an earlier tap is still live (~1h), syncs with zero
+ * popups — just the icon spinning. Only when the token is gone does it
+ * fall back to the brief one-tap popup (account pre-selected, no chooser).
  * Pushes this device's pending uploads, then pulls the latest from Drive. */
 function manualSync() {
   if (!S.user || S.user.kind !== 'google' || typeof Drive === 'undefined') return;
   if (Drive.getStatus() === 'syncing') return; /* already going */
+  if (Drive.hasToken()) {
+    Drive.syncNow().then(function (res) {
+      if (res.remote) applyRemoteEntries(res.remote);
+      if (!Drive.hasToken()) googleSignInFlow(S.user.id); /* token died mid-sync */
+      else if (res.action === 'offline') toast('You are offline — connect and tap sync again.');
+    });
+    return;
+  }
   googleSignInFlow(S.user.id);
 }
 
@@ -847,6 +857,7 @@ function googleSignInFlow(hint) {
       }
     });
   }).catch(function (err) {
+    if (typeof Drive !== 'undefined') Drive.noteFailed();
     toast(googleErrorText(err));
   }).then(function () {
     setGoogleBusy(false);
@@ -2244,7 +2255,7 @@ document.addEventListener('DOMContentLoaded', function () {
     googleSignInFlow(prof && prof.email);
   });
   var rcBtn = $('#account-reconnect');
-  if (rcBtn) rcBtn.addEventListener('click', function () { closeAccountMenu(); googleSignInFlow(S.user && S.user.id); });
+  if (rcBtn) rcBtn.addEventListener('click', function () { closeAccountMenu(); manualSync(); });
 
   var rf = $('#report-form');
   if (rf) {
