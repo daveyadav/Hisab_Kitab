@@ -288,6 +288,11 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
   .sync-btn{width:34px;height:34px;flex:none}
   .user-chip{max-width:none;padding:4px;gap:0;flex:none}
   .user-chip span.nm{display:none}
+  /* Phones: the frosted-glass blur on the sticky topbar + bottom nav makes
+   * the page shimmer/jitter while scrolling on mobile GPUs. Solid bar. */
+  .topbar,.bottomnav{
+    backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--surface);
+  }
 }
 @keyframes syncrot{to{transform:rotate(360deg)}}
 
