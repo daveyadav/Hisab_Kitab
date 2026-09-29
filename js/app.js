@@ -26,6 +26,8 @@
 
 /* ---------------- constants ---------------- */
 var TZ = 'Asia/Kathmandu';
+/* App version shown in the More tab — bump together with the SW cache name. */
+var APP_VERSION = '23';
 /* Storage layout
  * Local accounts (per-device):
  *  hisab_accounts_v2            = { lowercasedName: {name, salt, algo, passHash, createdAt} }
@@ -1773,7 +1775,8 @@ function renderMore() {
         'and nobody else on this device can see them. ' +
         'Clearing browser data erases them, so export a backup regularly (above). ' +
         'Logins on this device are family-convenience locks, not bank-grade security.') + '</p>' +
-    '<p class="fineprint"><a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a></p></div>';
+    '<p class="fineprint"><a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a></p></div>' +
+    '<p class="fineprint center muted" style="margin-top:14px">Hisab v' + APP_VERSION + '</p>';
 
   $('#tab-more').innerHTML = html;
 
