@@ -240,15 +240,20 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
 
 /* ================= sync pill ================= */
 .sync-pill{
-  display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:.72rem;font-weight:700;
-  border:1px solid var(--line);border-radius:999px;padding:5px 10px;min-width:92px;
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  font-size:.72rem;font-weight:700;letter-spacing:.01em;
+  border:1px solid var(--line);border-radius:999px;padding:6px 12px;min-width:92px;
   background:var(--surface);color:var(--ink-2);white-space:nowrap;
+  box-shadow:var(--shadow-sm);
 }
-.sync-pill .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
-.sync-pill.ok .dot{background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.sync-pill .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+.sync-pill.ok{background:var(--accent-soft);border-color:transparent;color:var(--accent-ink)}
+.sync-pill.ok .dot{background:var(--accent)}
+.sync-pill.busy{background:var(--gold-soft);border-color:transparent;color:var(--ink-2)}
 .sync-pill.busy .dot{background:var(--gold);animation:pulse 1s infinite}
+.sync-pill.warn{background:var(--gold-soft);border-color:transparent;color:var(--ink-2)}
 .sync-pill.warn .dot{background:var(--gold)}
-.sync-pill.bad{border-color:var(--danger-soft);color:var(--danger);cursor:pointer}
+.sync-pill.bad{background:var(--danger-soft);border-color:transparent;color:var(--danger);cursor:pointer}
 .sync-pill.bad .dot{background:var(--danger)}
 @keyframes pulse{50%{opacity:.25}}
 
@@ -632,6 +637,12 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
   .topbar-row .spacer{order:2}
   .topbar-row .sync-pill{order:3}
   .topbar-row .user-chip{order:4}
+}
+/* Entry sheet: on narrow phones the date+time picker is squeezed next to
+ * Amount and its time part gets clipped — stack them full-width instead so
+ * both date and time stay visible without opening the picker. */
+@media (max-width:520px){
+  #entry-form .row2{grid-template-columns:minmax(0,1fr)}
 }
 .row2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .row2 input{min-width:0}
