@@ -68,7 +68,8 @@ async function fetchMock(req) {
   return mockResponse(url, true, 'network:' + url);
 }
 
-const sandbox = { self: selfMock, caches: cachesMock, fetch: fetchMock, URL: URL };
+const sandbox = { self: selfMock, caches: cachesMock, fetch: fetchMock, URL: URL,
+  setTimeout: setTimeout, clearTimeout: clearTimeout };
 vm.createContext(sandbox);
 const SW_SRC = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
 /* Cache name is read from sw.js so version bumps don't break the tests. */
@@ -95,23 +96,47 @@ function fire(type, event) {
   check('install caches manifest + icons',
     !!cache.map.get(SCOPE + 'manifest.webmanifest') && !!cache.map.get(SCOPE + 'assets/icon-192.png'));
 
-  // install survives a single failing asset (offline must not die on one 404)
+  // install survives a single NON-CRITICAL failing asset (one 404 can't kill offline)
   {
-    const failing = new MockCache();
-    const origAdd = failing.add;
-    failing.add = async function (p) {
+    await cachesMock.delete(CACHE_NAME);
+    const cache = await cachesMock.open(CACHE_NAME);
+    const origAdd = cache.add.bind(cache);
+    cache.add = async function (p) {
       if (String(p).indexOf('logo-maskable') >= 0) throw new Error('404');
-      return origAdd.call(this, p);
+      return origAdd(p);
     };
-    cachesMock._caches.set(CACHE_NAME + '-probe', failing);
-    let ok = true;
-    try {
-      const ASSETS_PROBE = (SW_SRC.match(/var ASSETS = \[([\s\S]*?)\];/) || [])[1] || '';
-      const list = ASSETS_PROBE.split(',').map(s => s.trim().replace(/^'|'$/g, '')).filter(Boolean);
-      await Promise.all(list.map(a => failing.add(a).catch(function () {})));
-    } catch (e) { ok = false; }
-    check('install keeps going when one asset fails', ok && failing.map.size >= 13, 'got ' + failing.map.size);
-    cachesMock._caches.delete(CACHE_NAME + '-probe');
+    let resolved = false;
+    try { await fire('install', {}); resolved = true; } catch (e) { resolved = false; }
+    cache.add = origAdd;
+    const after = await cachesMock.open(CACHE_NAME);
+    check('install resolves when a non-critical asset fails', resolved && after.map.size >= 13, 'got ' + after.map.size);
+  }
+
+  // install FAILS when a critical asset can't be cached — an "installed"
+  // worker with an empty cache would report ready but never open offline
+  {
+    await cachesMock.delete(CACHE_NAME);
+    const cache = await cachesMock.open(CACHE_NAME);
+    const origAdd = cache.add.bind(cache);
+    cache.add = async function (p) {
+      if (String(p) === 'js/app.js') throw new Error('404');
+      return origAdd(p);
+    };
+    let rejected = false;
+    try { await fire('install', {}); } catch (e) { rejected = true; }
+    cache.add = origAdd;
+    check('install rejects when a critical asset fails', rejected);
+    // reinstall cleanly for the remaining tests
+    await cachesMock.delete(CACHE_NAME);
+    await fire('install', {});
+  }
+
+  // recache message refills an evicted cache
+  {
+    await cachesMock.delete(CACHE_NAME);
+    await fire('message', { data: { type: 'recache' } });
+    const refilled = await cachesMock.open(CACHE_NAME);
+    check('recache refills an evicted cache', refilled.map.size >= 14, 'got ' + refilled.map.size);
   }
 
   // activate → old caches dropped

@@ -302,6 +302,26 @@ if ('serviceWorker' in navigator) {
     if (!document.hidden) registerSW();
   });
 }
+/* Self-heal: if the browser evicted the saved offline copy (storage
+ * pressure), the installer can still report "ready" while a fresh launch
+ * offline fails. When online, check the shell is really cached — if not,
+ * ask the active worker to save it again. */
+function healOfflineCache() {
+  try {
+    if (!('serviceWorker' in navigator) || !('caches' in window)) return;
+    if (!navigator.onLine) return;
+    caches.match('index.html').then(function (hit) {
+      if (hit) return;
+      navigator.serviceWorker.getRegistration().then(function (reg) {
+        var w = reg && reg.active;
+        if (w && typeof w.postMessage === 'function') {
+          try { w.postMessage({ type: 'recache' }); } catch (e) { /* ignore */ }
+        }
+      }).catch(function () { /* ignore */ });
+    }).catch(function () { /* ignore */ });
+  } catch (e) { /* ignore */ }
+}
+setTimeout(healOfflineCache, 8000);
 </script>
 </body>
 </html>

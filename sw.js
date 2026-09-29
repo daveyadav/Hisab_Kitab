@@ -12,7 +12,45 @@
  * ========================================================================= */
 'use strict';
 
-var CACHE = 'hisab-shell-v12';
+var CACHE = 'hisab-shell-v13';
+
+/* Files the app cannot boot without. The install FAILS unless every one of
+ * these lands in the cache — a worker that "installed" with an empty cache
+ * (e.g. the network dropped mid-install) would report ready but never open
+ * offline. Failing lets the browser retry the install on the next visit. */
+var CRITICAL = ['./', 'index.html', 'css/styles.css', 'js/config.js', 'js/drive.js', 'js/app.js'];
+/* One hanging asset must not wedge the worker in "installing" forever. */
+var INSTALL_TIMEOUT_MS = 20000;
+
+function withTimeout(promise, ms) {
+  return new Promise(function (resolve, reject) {
+    var settled = false;
+    var t = setTimeout(function () {
+      if (!settled) { settled = true; reject(new Error('sw: asset timed out')); }
+    }, ms);
+    promise.then(function (v) {
+      if (!settled) { settled = true; clearTimeout(t); resolve(v); }
+    }, function (e) {
+      if (!settled) { settled = true; clearTimeout(t); reject(e); }
+    });
+  });
+}
+
+function cacheAll(cache, assets, failLoud) {
+  return Promise.all(assets.map(function (a) {
+    return withTimeout(cache.add(a), INSTALL_TIMEOUT_MS).then(
+      function () { return a; },
+      function () { return null; }
+    );
+  })).then(function (saved) {
+    if (!failLoud) return saved;
+    var have = {};
+    saved.forEach(function (a) { if (a) have[a] = true; });
+    var missing = CRITICAL.filter(function (a) { return !have[a]; });
+    if (missing.length) throw new Error('sw: critical assets not cached: ' + missing.join(','));
+    return saved;
+  });
+}
 
 var ASSETS = [
   './',
@@ -35,14 +73,18 @@ var ASSETS = [
 self.addEventListener('install', function (e) {
   e.waitUntil(
     caches.open(CACHE)
-      .then(function (c) {
-        /* Cache each asset on its own: one missing file must not kill
-         * the whole offline install. */
-        return Promise.all(ASSETS.map(function (a) {
-          return c.add(a).catch(function () { /* keep going */ });
-        }));
-      })
+      .then(function (c) { return cacheAll(c, ASSETS, true); })
       .then(function () { return self.skipWaiting(); })
+  );
+});
+
+/* Re-fill the cache on demand. If the browser evicted the offline copy
+ * (storage pressure), the worker is still installed but cold start fails —
+ * the page detects the missing shell and asks for a refill. */
+self.addEventListener('message', function (e) {
+  if (!e.data || e.data.type !== 'recache') return;
+  e.waitUntil(
+    caches.open(CACHE).then(function (c) { return cacheAll(c, ASSETS, false); })
   );
 });
 
