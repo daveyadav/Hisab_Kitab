@@ -272,7 +272,8 @@ function drivePayloadFor(email, descs) {
       aFiles === 1 && bFiles === 1 && bContent.entries.personal[0].desc === 'BobEntry');
   }
 
-  // A9: 401 → silent re-auth → retry succeeds
+  // A9: 401 → no silent retry; the dead token is dropped, the tappable
+  // state shows, and the user's tap re-authenticates and uploads.
   {
     const c = makeContext();
     const Drive = c.windowStub.Drive;
@@ -280,15 +281,26 @@ function drivePayloadFor(email, descs) {
     await Drive.signIn(); // tok-1
     Drive.scheduleSave(() => drivePayloadFor('alice', ['First']));
     await tick(300);
-    const log = [];
-    Drive.onStatus(s => log.push(s));
+    check('A9 first upload landed', c.fake.uploadCalls().length === 1,
+      String(c.fake.uploadCalls().length));
     const reqsBefore = c.fake.tokenRequests.length;
     c.fake.failOnce401.add(c.fake.lastToken);
     Drive.scheduleSave(() => drivePayloadFor('alice', ['Second']));
     await tick(600);
-    check('A9 401 triggers one silent re-auth', c.fake.tokenRequests.length === reqsBefore + 1,
-      'requests: ' + c.fake.tokenRequests.length + ' vs ' + (reqsBefore + 1));
-    check('A9 status recovers to synced after retry', Drive.getStatus() === 'synced', Drive.getStatus());
+    check('A9 401 triggers no silent token request', c.fake.tokenRequests.length === reqsBefore,
+      'requests: ' + c.fake.tokenRequests.length + ' vs ' + reqsBefore);
+    check('A9 dead token dropped after 401', Drive.hasToken() === false);
+    check('A9 401 surfaces reauth status', Drive.getStatus() === 'reauth', Drive.getStatus());
+    const storedMid = c.fake.stores['alice@gmail.com'];
+    const mid = JSON.parse(Object.values(storedMid.files)[0].content);
+    check('A9 failed upload left the old Drive data in place',
+      mid.entries.personal[0].desc === 'First', mid.entries.personal[0].desc);
+    /* The tap: interactive sign-in, then the pending edit uploads. */
+    await Drive.signIn();
+    Drive.scheduleSave(() => drivePayloadFor('alice', ['Second']));
+    await Drive.flushSave();
+    await tick(200);
+    check('A9 status synced after the tap', Drive.getStatus() === 'synced', Drive.getStatus());
     const stored = c.fake.stores['alice@gmail.com'];
     const latest = JSON.parse(Object.values(stored.files)[0].content);
     check('A9 retried upload persisted', latest.entries.personal[0].desc === 'Second');
@@ -409,7 +421,9 @@ function drivePayloadFor(email, descs) {
     check('B6 sync pill hidden for local account', c.$('#sync-pill').hidden === true);
   }
 
-  // B7: boot with google session → auto-restore from cache, silent reconnect, no nag
+  // B7: boot with google session → auto-restore from cache, ZERO Google
+  // contact (GIS opens a popup even for "silent" requests — that's the
+  // redirect-to-Google flash on every refresh). No nag, entries visible.
   {
     const c = makeContext();
     c.store['hisab_session_v2'] = JSON.stringify({ kind: 'google', id: 'alice@gmail.com' });
@@ -423,20 +437,20 @@ function drivePayloadFor(email, descs) {
     check('B7 main view auto-opened on boot', c.$('#view-main').hidden === false);
     check('B7 restored as the same google user',
       c.sandbox.S.user && c.sandbox.S.user.kind === 'google' && c.sandbox.S.user.id === 'alice@gmail.com');
-    check('B7 silent token refresh attempted without user gesture',
-      c.fake.tokenRequests.length === 1 && c.fake.tokenRequests[0].prompt === 'none',
+    check('B7 boot makes zero token requests (no silent popup, no redirect)',
+      c.fake.tokenRequests.length === 0,
       JSON.stringify(c.fake.tokenRequests));
-    check('B7 no nag when silent refresh works',
-      !/reconnect/i.test(c.$('#sync-pill').innerHTML), c.$('#sync-pill').innerHTML);
+    check('B7 no nag at boot — pill Ready',
+      /ready/i.test(c.$('#sync-pill').innerHTML), c.$('#sync-pill').innerHTML);
     check('B7 cached entries visible',
       c.sandbox.S.entries.personal.some(e => e.desc === 'Cached momo'));
   }
 
-  // B7b: silent refresh fails at boot → NO nag; a calm "Waiting to sync"
-  // appears only when the user changes something that actually needs syncing
+  // B7b: boot never contacts Google; a calm "Waiting to sync" appears only
+  // when the user changes something that actually needs syncing. The tap
+  // is an explicit interactive reconnect (user gesture → popup allowed).
   {
     const c = makeContext();
-    c.fake.reauthShouldFail = true;
     c.store['hisab_session_v2'] = JSON.stringify({ kind: 'google', id: 'ana@example.com' });
     c.store['hisab_google_profile'] = JSON.stringify({ email: 'ana@example.com', name: 'Ana', picture: '' });
     c.store['hisab_data_v2_g_ana@example.com'] = JSON.stringify({ personal: [
@@ -445,22 +459,25 @@ function drivePayloadFor(email, descs) {
     c.fireReady();
     c.fireLoad();
     await tick(900);
-    check('B7b silent refresh attempted first',
-      c.fake.tokenRequests.length === 1 && c.fake.tokenRequests[0].prompt === 'none',
+    check('B7b no token request at boot',
+      c.fake.tokenRequests.length === 0,
       JSON.stringify(c.fake.tokenRequests));
     const pill = c.$('#sync-pill');
-    check('B7b no nag at boot when silent fails',
-      pill.hidden === false && !/waiting to sync/i.test(pill.innerHTML), pill.innerHTML);
+    check('B7b no nag at boot — pill Ready',
+      pill.hidden === false && /ready/i.test(pill.innerHTML), pill.innerHTML);
     /* User adds an entry → now a sync is actually due → the pill may ask. */
     c.sandbox.addEntry({ ts: Date.now(), type: 'cash_purchase', desc: 'New chiya', amount: 80, party: '', note: '' });
     await tick(400);
     check('B7b pill shows "Waiting to sync" only when a sync is due',
       /waiting to sync/i.test(pill.innerHTML), pill.innerHTML);
+    check('B7b the edit triggered no silent token request',
+      c.fake.tokenRequests.length === 0,
+      JSON.stringify(c.fake.tokenRequests));
     const reqsBeforeTap = c.fake.tokenRequests.length;
     c.fake.currentEmail = 'ana@example.com'; /* tap signs back into the same account */
     pill.click();
     await tick(150);
-    check('B7b tapping triggers a visible reconnect, not another silent one',
+    check('B7b tapping triggers an interactive reconnect, never a silent one',
       c.fake.tokenRequests.length === reqsBeforeTap + 1 &&
       c.fake.tokenRequests[c.fake.tokenRequests.length - 1].prompt !== 'none',
       JSON.stringify(c.fake.tokenRequests));
@@ -470,7 +487,6 @@ function drivePayloadFor(email, descs) {
   // copy must not wipe entries made while the token was expired
   {
     const c = makeContext();
-    c.fake.reauthShouldFail = true;
     c.store['hisab_session_v2'] = JSON.stringify({ kind: 'google', id: 'ana@example.com' });
     c.store['hisab_google_profile'] = JSON.stringify({ email: 'ana@example.com', name: 'Ana', picture: '' });
     c.store['hisab_data_v2_g_ana@example.com'] = JSON.stringify({ personal: [
@@ -496,24 +512,36 @@ function drivePayloadFor(email, descs) {
       upDescs.includes('Cached momo') && upDescs.includes('Offline chiya'), upDescs.join(','));
   }
 
-  // B7e: save-triggered silent attempts are throttled (5 min), not spammed
+  // B7e: nothing automatic ever asks Google for a token — no silent
+  // popup attempts on save, on 401, or on reconnect. The user taps instead.
   {
     const c = makeContext();
     const Drive = c.windowStub.Drive;
-    c.fake.reauthShouldFail = true;
-    await Drive.silentReconnect('ana@example.com'); /* boot: fails quietly */
-    check('B7e failed boot silent stays quiet (idle, no nag)', Drive.getStatus() === 'idle', Drive.getStatus());
     Drive.scheduleSave(() => drivePayloadFor('ana', ['One']));
     await tick(200);
-    check('B7e save inside the throttle window tries nothing new',
-      c.fake.tokenRequests.length === 1 && Drive.getStatus() === 'reauth',
-      'reqs=' + c.fake.tokenRequests.length + ' status=' + Drive.getStatus());
-    Drive._setLastSilentMs(Date.now() - 6 * 60 * 1000); /* pretend 6 min passed */
+    check('B7e save with no token makes no token request',
+      c.fake.tokenRequests.length === 0,
+      'reqs=' + c.fake.tokenRequests.length);
+    check('B7e save with no token → Waiting to sync (not a popup)',
+      Drive.getStatus() === 'reauth', Drive.getStatus());
+    /* Expired token mid-session: a 401 must NOT trigger a silent retry —
+     * the dead token is dropped and the tappable state is shown. */
+    Drive._reset();
+    Drive._setDebounceMs(30);
+    c.fake.currentEmail = 'ana@example.com';
+    await Drive.signIn(); /* interactive — the user's tap; works */
+    const tok = c.fake.lastToken;
+    check('B7e interactive sign-in still works', Drive.hasToken() === true);
+    c.fake.failOnce401.add(tok); /* next Drive call: token expired */
+    const reqsBefore = c.fake.tokenRequests.length;
     Drive.scheduleSave(() => drivePayloadFor('ana', ['Two']));
-    await tick(200);
-    check('B7e save after the throttle window retries silently once more',
-      c.fake.tokenRequests.length === 2 && Drive.getStatus() === 'reauth',
-      'reqs=' + c.fake.tokenRequests.length + ' status=' + Drive.getStatus());
+    await tick(400);
+    check('B7e 401 triggers no silent token request',
+      c.fake.tokenRequests.length === reqsBefore,
+      'reqs=' + c.fake.tokenRequests.length);
+    check('B7e dead token dropped after 401', Drive.hasToken() === false);
+    check('B7e 401 → Waiting to sync', Drive.getStatus() === 'reauth', Drive.getStatus());
+    check('B7e nothing uploaded with the dead token', c.fake.uploadCalls().length === 0);
   }
 
   // B7c: entry rows show date + time clearly when asked (dashboard recent list)
@@ -694,9 +722,24 @@ function drivePayloadFor(email, descs) {
     Drive.scheduleSave(() => drivePayloadFor('ana', ['Offline momo']));
     await tick(100);
     check('B10b dirty before reconnect', c.store['hisab_drive_dirty_ana@example.com'] === '1');
+    /* …time passes; the token expires while the app is closed (memory is
+     * wiped — the persisted dirty flag is what survives). */
+    Drive._reset();
     c.windowStub.navigator.onLine = true;
-    await Drive.silentReconnect('ana@example.com'); /* token back → flush */
-    await tick(400);
+    /* Back online with no token: no silent popup attempt — the tappable
+     * state appears instead. The tap is the interactive sign-in. */
+    const reqsBefore = c.fake.tokenRequests.length;
+    Drive.scheduleSave(() => drivePayloadFor('ana', ['Offline momo']));
+    await tick(100);
+    check('B10b reconnect asks for no silent token',
+      c.fake.tokenRequests.length === reqsBefore,
+      'reqs=' + c.fake.tokenRequests.length);
+    check('B10b tappable state while the token is missing',
+      Drive.getStatus() === 'reauth', Drive.getStatus());
+    await Drive.signIn(); /* the user's tap: interactive, popup allowed */
+    Drive.scheduleSave(() => drivePayloadFor('ana', ['Offline momo']));
+    await Drive.flushSave();
+    await tick(100);
     check('B10b pending edit uploaded once online', c.fake.uploadCalls().length >= 1,
       String(c.fake.uploadCalls().length));
     check('B10b dirty flag cleared after the upload lands',
@@ -705,7 +748,8 @@ function drivePayloadFor(email, descs) {
   }
 
   // B10c: full story — offline entry, app closed, reopened online:
-  // the entry is still there and reaches Drive by itself
+  // the entry is still there; nothing phones Google on its own; the tap
+  // uploads it to Drive.
   {
     const c1 = makeContext();
     const D1 = c1.windowStub.Drive;
@@ -731,19 +775,32 @@ function drivePayloadFor(email, descs) {
     const descs = c2.sandbox.S.entries.personal.map(e => e.desc);
     check('B10c offline entry still visible after close + reopen',
       descs.includes('Offline chiya'), descs.join(','));
+    check('B10c boot makes zero token requests (no silent popup)',
+      c2.fake.tokenRequests.length === 0,
+      JSON.stringify(c2.fake.tokenRequests));
+    check('B10c nothing uploaded on boot without a tap',
+      c2.fake.uploadCalls().length === 0,
+      String(c2.fake.uploadCalls().length));
+    check('B10c pill offers the one-tap reconnect',
+      /waiting to sync/i.test(c2.$('#sync-pill').innerHTML),
+      c2.$('#sync-pill').innerHTML);
+    /* The tap: interactive sign-in, then the pending edit uploads. */
+    c2.$('#sync-pill').click();
+    await tick(1200);
     const ups = c2.fake.uploadCalls();
-    check('B10c pending offline edit auto-uploaded on boot', ups.length >= 1, String(ups.length));
+    check('B10c pending offline edit uploaded after the tap', ups.length >= 1, String(ups.length));
     const stored = c2.fake.stores['ana@example.com'];
     const latest = stored ? JSON.parse(Object.values(stored.files)[0].content) : null;
     const upDescs = latest ? latest.entries.personal.map(e => e.desc) : [];
     check('B10c Drive received the offline entry', upDescs.includes('Offline chiya'), upDescs.join(','));
+    check('B10c dirty flag cleared after the upload lands',
+      c2.store['hisab_drive_dirty_ana@example.com'] === undefined);
     check('B10c dirty flag cleared once synced',
       c2.store['hisab_drive_dirty_ana@example.com'] === undefined);
   }
 
-  // B10g: the silent token refresh waits for window 'load', so Google's
-  // hidden iframe can never hold the page's load event hostage (a stuck
-  // load starves the service-worker registration → no offline mode)
+  // B10g: page load triggers zero Google contact — nothing phones home or
+  // opens a popup on load anymore; the pending entry uploads after the tap
   {
     const c1 = makeContext();
     const D1 = c1.windowStub.Drive;
@@ -763,11 +820,20 @@ function drivePayloadFor(email, descs) {
     c2.windowStub.Drive._setDebounceMs(30);
     c2.fireReady();
     await tick(1200); /* GIS poll ran, but 'load' has NOT fired yet */
-    check('B10g no silent token request before page load',
-      c2.fake.uploadCalls().length === 0, String(c2.fake.uploadCalls().length));
+    check('B10g no token request before page load',
+      c2.fake.tokenRequests.length === 0, String(c2.fake.tokenRequests.length));
     c2.fireLoad();
     await tick(1500);
-    check('B10g silent reconnect runs after load and uploads the pending entry',
+    check('B10g no token request after page load either',
+      c2.fake.tokenRequests.length === 0, String(c2.fake.tokenRequests.length));
+    check('B10g nothing uploaded without the tap',
+      c2.fake.uploadCalls().length === 0, String(c2.fake.uploadCalls().length));
+    check('B10g pill offers the one-tap reconnect after load',
+      /waiting to sync/i.test(c2.$('#sync-pill').innerHTML),
+      c2.$('#sync-pill').innerHTML);
+    c2.$('#sync-pill').click(); /* the tap: interactive sign-in, then upload */
+    await tick(1500);
+    check('B10g pending entry uploaded after the tap',
       c2.fake.uploadCalls().length >= 1, String(c2.fake.uploadCalls().length));
   }
 

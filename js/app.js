@@ -488,43 +488,14 @@ function boot() {
   showView('login');
 }
 
-/* Restore a Google session from the local cache, then quietly refresh the
- * Drive token in the background (Google's script loads async, so wait for
- * it briefly). If the silent refresh fails, Drive stays quiet — the app
- * works from the cache and a calm "Waiting to sync" pill appears only when
- * the user changed something that actually needs syncing (tapping it is
- * optional — the app keeps retrying quietly on its own). */
+/* Restore a Google session from the local cache. The app opens straight
+ * from the cache and never contacts Google on its own: GIS opens a popup
+ * window even for "silent" token requests, which is the redirect-to-Google
+ * flash on every refresh. If Drive is behind, the "Waiting to sync" pill
+ * offers a one-tap reconnect. */
 function restoreGoogleSession(prof) {
   loginAs({ kind: 'google', id: String(prof.email).toLowerCase(),
             displayName: prof.name || prof.email, picture: prof.picture || '' }, true);
-  var tries = 0;
-  var timer = setInterval(function () {
-    if (Drive.gisLoaded() || ++tries > 20) {
-      clearInterval(timer);
-      if (Drive.gisLoaded()) {
-        /* Google's silent sign-in uses a hidden iframe that would delay
-         * window 'load' if injected early — and the offline installer must
-         * not wait on Google. Run it after load; the app works from the
-         * local cache meanwhile. */
-        whenLoaded(function () { Drive.silentReconnect(prof.email); });
-      }
-      /* If Google's script never arrived (offline), stay quiet: Drive
-       * retries silently when connectivity returns. */
-    }
-  }, 500);
-}
-
-/* Run fn now if the page already finished loading, else after 'load'. */
-function whenLoaded(fn) {
-  try {
-    if (typeof document !== 'undefined' && document.readyState === 'complete') { fn(); return; }
-  } catch (e) { /* fall through to the listener */ }
-  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-    window.addEventListener('load', function h() {
-      window.removeEventListener('load', h);
-      fn();
-    });
-  } else { fn(); }
 }
 
 function loginAs(user, quiet) {
@@ -541,10 +512,16 @@ function loginAs(user, quiet) {
   showView('main');
   renderAll(true);
   updateSyncPill(typeof Drive !== 'undefined' ? Drive.getStatus() : 'disabled');
-  if (user.kind === 'google' && typeof Drive !== 'undefined' && Drive.hasUnsyncedChanges()) {
-    /* Reopened with edits Drive never confirmed (added offline, app
-     * closed…): re-arm the upload — it fires once the token is back. */
-    Drive.scheduleSave(drivePayload);
+  if (user.kind === 'google' && typeof Drive !== 'undefined') {
+    if (Drive.hasUnsyncedChanges()) {
+      /* Reopened with edits Drive never confirmed (added offline, app
+       * closed…): re-arm the upload — it fires once the token is back. */
+      Drive.scheduleSave(drivePayload);
+    } else if (Drive.getStatus() === 'disabled') {
+      /* Fresh boot, nothing pending: Drive is in play, the app is ready
+       * from the cache — show Ready instead of hiding the pill. */
+      Drive.noteIdle();
+    }
   }
   if (!quiet) toast('Namaste, ' + displayName());
 }

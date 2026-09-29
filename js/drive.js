@@ -59,15 +59,12 @@
   var payloadProvider = null;
   var dirtyWhileOffline = false;
   var pendingResolve = null;
-  /* reauthNeeded: the last silent token refresh failed (browser blocks
-   * Google's silent iframe, e.g. third-party cookies off). The app keeps
-   * working from the local cache; a tap is asked for only when a Drive
-   * sync is actually due. Cleared by any fresh token. */
-  var reauthNeeded = false;
-  /* Quiet background retries, at most this often — never spam Google. */
-  var SILENT_RETRY_MS = 5 * 60 * 1000;
-  var lastSilentMs = 0;
-  /* Account email used as login_hint for silent requests. */
+  /* Google is contacted ONLY on an explicit user tap (interactive sign-in).
+   * GIS opens a popup window even for "silent" token requests, and browsers
+   * block popups without a user gesture — so an automatic refresh is either
+   * doomed or flashes a Google window on every app open. Pending uploads
+   * surface as the calm tappable "Waiting to sync" state instead. */
+  /* Account email, used as a fallback key for the per-account dirty flag. */
   var loginHint = null;
   /* Local edits made while Drive had no token (not yet confirmed there). */
   var unsyncedChanges = false;
@@ -160,7 +157,6 @@
     var cb = pendingResolve; pendingResolve = null;
     if (resp && resp.access_token) {
       accessToken = resp.access_token;
-      reauthNeeded = false; /* any fresh token clears the tap requirement */
       if (cb) cb(null);
     } else if (cb) {
       cb(new Error((resp && resp.error) || 'token-denied'));
@@ -174,8 +170,8 @@
     if (cb) cb(new Error(type));
   }
 
-  /* prompt: '' (default), 'none' (silent), 'select_account', 'consent'.
-   * Resolves with null on success, or an Error.                         */
+  /* Interactive token request (popup). Always called from a user tap, so
+   * the browser allows the popup GIS opens. prompt: '' (default).      */
   function requestToken(promptMode, hint) {
     return new Promise(function (resolve) {
       if (!gisLoaded() || !configured()) { resolve(new Error('google-unavailable')); return; }
@@ -204,11 +200,14 @@
 
     return f('https://www.googleapis.com' + path, o).then(function (res) {
       if (res.status === 401 && !retried) {
-        /* Token expired — try one silent refresh, then ask the user. */
-        return requestToken('none').then(function (err) {
-          if (err) { setStatus('reauth'); throw new Error('reauth-needed'); }
-          return api(path, opts, true);
-        });
+        /* Token expired. Don't try a silent refresh: GIS opens a popup
+         * window even for "silent" requests, and without a user gesture
+         * the browser blocks it (or flashes a Google window). Drop the
+         * dead token and surface the calm tappable state instead — one
+         * tap on the pill reconnects and the upload retries. */
+        accessToken = null;
+        setStatus('reauth');
+        throw new Error('reauth-needed');
       }
       return res;
     }, function (netErr) {
@@ -321,24 +320,13 @@
      * (offline, expired token…), the next boot still knows Drive is behind. */
     if (payloadProvider) persistDirty(true);
     if (!accessToken) {
-      /* Not signed in with Google right now — nothing to sync yet.
-       * When Google needs a tap (reauthNeeded), ask for it only now that
-       * there is actually something to upload: one quiet silent attempt
-       * first, then the "Waiting to sync" state. */
+      /* No Google token right now — never try to fetch one silently.
+       * GIS opens a popup window even for "silent" requests, and without
+       * a user gesture the browser blocks it or flashes a Google window
+       * (that's the redirect-to-Google on every app open). The calm
+       * "Waiting to sync" pill lets the user reconnect with one tap. */
       if (!online()) { setStatus('offline'); dirtyWhileOffline = true; return; }
-      if (reauthNeeded) {
-        if (Date.now() - lastSilentMs >= SILENT_RETRY_MS) {
-          lastSilentMs = Date.now();
-          setStatus('syncing');
-          requestToken('none', loginHint).then(function (err) {
-            if (err || !accessToken) { setStatus('reauth'); return; }
-            reauthNeeded = false;
-            scheduleSave();
-          });
-        } else {
-          setStatus('reauth');
-        }
-      }
+      setStatus('reauth');
       return;
     }
     if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
@@ -372,56 +360,24 @@
   /* Call after a successful load-from-Drive: we are in sync, nothing pending. */
   function markInSync() { unsyncedChanges = false; persistDirty(false); setStatus(accessToken ? 'synced' : 'idle'); }
 
-  /* Call when a Google session is restored from the local cache without a
-   * live token (fresh page load): the app opens from the cache and works
-   * offline-capable; Drive reconnects silently when it can, otherwise the
-   * user taps once at the moment a sync is actually due. */
-  function noteReauth() { setStatus('reauth'); }
+  /* Fresh boot with a restored Google session and nothing pending:
+   * Drive is in play, the app works from the cache — show Ready. */
+  function noteIdle() { if (status === 'disabled') setStatus('idle'); }
 
-  /* Try to refresh the Google token silently (no popup, no user gesture).
-   * Resolves true when Drive sync is live again, false when Google
-   * genuinely needs the user to tap and reconnect. A failed silent
-   * attempt at boot stays QUIET (status 'idle', app works from cache);
-   * the tap prompt is raised later, only when a sync is actually due. */
-  function silentReconnect(hint) {
-    if (!configured() || !gisLoaded()) return Promise.resolve(false);
-    if (accessToken) {
-      reauthNeeded = false;
-      if (hasUnsyncedChanges() && payloadProvider) scheduleSave();
-      if (status === 'reauth' || status === 'disabled') setStatus('idle');
-      return Promise.resolve(true);
-    }
-    if (hint) loginHint = hint;
-    lastSilentMs = Date.now();
-    setStatus('syncing');
-    return requestToken('none', loginHint).then(function (err) {
-      if (err) {
-        reauthNeeded = true;
-        setStatus('idle');
-        return false;
-      }
-      reauthNeeded = false;
-      /* Token's back — push anything the app couldn't upload earlier
-       * (e.g. entries added offline before the app was closed). */
-      if (hasUnsyncedChanges() && payloadProvider) scheduleSave();
-      setStatus('idle');
-      return true;
-    });
-  }
+  /* Call when a Google session is restored from the local cache without a
+   * live token (fresh page load): the app opens from the cache; the user
+   * taps once to reconnect when a sync is actually due. */
+  function noteReauth() { setStatus('reauth'); }
 
   /* Retry pending uploads when the browser comes back online, or when the
    * app is reopened after being in the background. If the only thing
-   * missing is the token, take another quiet silent shot — this lets the
-   * app reconnect by itself whenever Google allows it. The persisted
-   * dirty flag is consulted (not just memory), so edits made offline
-   * before the app was closed still get their retry. */
+   * missing is the token, surface the tappable state — never a silent
+   * popup attempt (see scheduleSave). The persisted dirty flag is
+   * consulted (not just memory), so edits made offline before the app
+   * was closed still get their retry the moment the user taps. */
   function backgroundRetry() {
-    if (!accessToken && hasUnsyncedChanges() &&
-        gisLoaded() && configured() &&
-        Date.now() - lastSilentMs >= SILENT_RETRY_MS) {
-      silentReconnect().then(function (ok) {
-        if (ok) { dirtyWhileOffline = false; if (payloadProvider) scheduleSave(); }
-      });
+    if (!accessToken && hasUnsyncedChanges() && online() && configured()) {
+      setStatus('reauth');
     }
   }
   if (typeof G.addEventListener === 'function') {
@@ -463,8 +419,6 @@
     payloadProvider = null;
     dirtyWhileOffline = false;
     persistDirty(false); /* signed out — nothing pending for this account */
-    reauthNeeded = false;
-    lastSilentMs = 0;
     loginHint = null;
     unsyncedChanges = false;
     clearProfile();
@@ -489,7 +443,7 @@
     flushSave: flushSave,
     markInSync: markInSync,
     noteReauth: noteReauth,
-    silentReconnect: silentReconnect,
+    noteIdle: noteIdle,
     hasToken: function () { return !!accessToken; },
     /* True when local edits exist that Drive hasn't confirmed yet —
      * consults the persisted flag too, so a restart can't fake "in sync". */
@@ -498,12 +452,11 @@
     writeProfile: writeProfile,
     /* test helpers */
     _setDebounceMs: function (ms) { DEBOUNCE_MS = ms; },
-    _setLastSilentMs: function (ms) { lastSilentMs = ms; },
     _reset: function () {
       if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
       tokenClient = null; accessToken = null; fileId = null;
       payloadProvider = null; dirtyWhileOffline = false; pendingResolve = null;
-      reauthNeeded = false; lastSilentMs = 0; loginHint = null;
+      loginHint = null;
       unsyncedChanges = false;
       statusListeners = []; status = 'disabled';
     }
