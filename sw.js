@@ -12,7 +12,7 @@
  * ========================================================================= */
 'use strict';
 
-var CACHE = 'hisab-shell-v21';
+var CACHE = 'hisab-shell-v22';
 
 /* Files the app cannot boot without. The install FAILS unless every one of
  * these lands in the cache — a worker that "installed" with an empty cache

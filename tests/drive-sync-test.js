@@ -1086,6 +1086,80 @@ function drivePayloadFor(email, descs) {
       /Offline — will sync/.test(pill.innerHTML), pill.innerHTML);
   }
 
+  // B14: phone back button — tab history, exit confirm, modal first.
+  {
+    const c = makeContext();
+    /* Fake history + capture the popstate handler before boot. */
+    const hist = {
+      entries: [null], backCalls: 0,
+      replaceState(st) { hist.entries[hist.entries.length - 1] = st; },
+      pushState(st) { hist.entries.push(st); },
+      back() { hist.backCalls++; },
+    };
+    c.sandbox.history = hist;
+    let popHandler = null;
+    const origAdd = c.windowStub.addEventListener.bind(c.windowStub);
+    c.windowStub.addEventListener = function (t, fn) {
+      if (t === 'popstate') popHandler = fn;
+      return origAdd(t, fn);
+    };
+    c.fireReady();
+    check('B14a boot installs guard entries', hist.entries.length === 2, JSON.stringify(hist.entries));
+    /* Log in a fake user so renders run. */
+    c.sandbox.S.user = { kind: 'local', id: 't' };
+    c.sandbox.S.entries = { personal: [], business: [] };
+    ['#confirm-modal', '#entry-modal', '#report-modal', '#account-modal']
+      .forEach(sel => { c.$(sel).hidden = true; });
+    const pressBack = () => {
+      hist.entries.pop(); /* browser moves one entry back */
+      popHandler({ state: hist.entries[hist.entries.length - 1] || null });
+    };
+    c.sandbox.goTab('entries');
+    check('B14b tab switch pushes a history entry',
+      hist.entries.length === 3 && c.sandbox.S.tab === 'entries', c.sandbox.S.tab);
+    pressBack();
+    check('B14c back returns to the previous tab', c.sandbox.S.tab === 'dashboard', c.sandbox.S.tab);
+    pressBack();
+    check('B14d back on main tab asks instead of exiting',
+      /press back again/i.test(c.$('#toast').textContent) && c.sandbox.S.tab === 'dashboard',
+      c.$('#toast').textContent);
+    check('B14d exit re-arms a guard entry', hist.entries.length === 2, String(hist.entries.length));
+    pressBack(); /* second press within 2s */
+    check('B14e second back press exits the app', hist.backCalls === 1, String(hist.backCalls));
+  }
+
+  // B14f: back with a sheet open closes the sheet, keeps the tab.
+  {
+    const c = makeContext();
+    const hist = {
+      entries: [null], backCalls: 0,
+      replaceState(st) { hist.entries[hist.entries.length - 1] = st; },
+      pushState(st) { hist.entries.push(st); },
+      back() { hist.backCalls++; },
+    };
+    c.sandbox.history = hist;
+    let popHandler = null;
+    const origAdd = c.windowStub.addEventListener.bind(c.windowStub);
+    c.windowStub.addEventListener = function (t, fn) {
+      if (t === 'popstate') popHandler = fn;
+      return origAdd(t, fn);
+    };
+    c.fireReady();
+    c.sandbox.S.user = { kind: 'local', id: 't' };
+    c.sandbox.S.entries = { personal: [], business: [] };
+    c.sandbox.goTab('entries');
+    ['#confirm-modal', '#entry-modal', '#report-modal', '#account-modal']
+      .forEach(sel => { c.$(sel).hidden = true; });
+    c.sandbox.openModal('#entry-modal');
+    check('B14f sheet opened', c.$('#entry-modal').hidden === false);
+    hist.entries.pop();
+    popHandler({ state: hist.entries[hist.entries.length - 1] || null });
+    await tick(400); /* closeModal hides after its fade */
+    check('B14f back closes the sheet instead of leaving the tab',
+      c.$('#entry-modal').hidden === true && c.sandbox.S.tab === 'entries',
+      c.sandbox.S.tab + '/' + c.$('#entry-modal').hidden);
+  }
+
   // B10d: the account modal shows an honest offline-readiness line
   {
     const c = makeContext();

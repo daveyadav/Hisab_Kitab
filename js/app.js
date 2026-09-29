@@ -526,6 +526,7 @@ function loginAs(user, quiet) {
   saveJSON(LS_SESSION, { kind: user.kind, id: user.id });
   hideContinueAs();
   showView('main');
+  try { history.replaceState({ hisabTab: 'dashboard' }, ''); } catch (e) {}
   renderAll(true);
   updateSyncPill(typeof Drive !== 'undefined' ? Drive.getStatus() : 'disabled');
   if (user.kind === 'google' && typeof Drive !== 'undefined') {
@@ -1286,7 +1287,7 @@ function bindDonut(id) {
     el.addEventListener('pointerleave', function () { hot(null); });
     el.addEventListener('click', function () {
       var k = el.getAttribute('data-k');
-      S.filterType = k; S.filterQ = ''; S.tab = 'entries'; renderAll(true);
+      S.filterType = k; S.filterQ = ''; goTab('entries');
     });
   });
 }
@@ -1353,6 +1354,61 @@ function renderAll(animate) {
   var fab = $('#fab');
   if (fab) fab.hidden = (S.tab === 'more');
   if (animate) staggerIn($('#tab-' + S.tab));
+}
+
+/* ---------------- phone back button ----------------
+ * Android's back button walks browser history, so each tab switch pushes
+ * one entry: back returns to the previous tab. An open sheet/menu/dialog
+ * closes first instead of leaving the tab. On the main tab, the first
+ * back press asks for a second press — only then does the app close. */
+var _lastExitAsk = 0, _exitingApp = false;
+function goTab(t) {
+  if (!t || t === S.tab) return;
+  S.tab = t;
+  try { history.pushState({ hisabTab: t }, ''); } catch (e) {}
+  renderAll(true);
+  try { window.scrollTo(0, 0); } catch (e2) {}
+}
+/* Close the topmost open layer. Returns true when one was open. */
+function closeTopmostLayer() {
+  var sels = ['#confirm-modal', '#entry-modal', '#report-modal', '#account-modal'];
+  for (var i = 0; i < sels.length; i++) {
+    var m = $(sels[i]);
+    if (m && !m.hidden) {
+      if (sels[i] === '#entry-modal') closeEntryModal();
+      else if (sels[i] === '#account-modal') closeAccountMenu();
+      else closeModal(sels[i]);
+      return true;
+    }
+  }
+  return false;
+}
+function onPhoneBack(e) {
+  if (_exitingApp) return;
+  /* A sheet/menu/dialog is open: close it, stay on this tab. */
+  if (closeTopmostLayer()) {
+    try { history.pushState({ hisabTab: S.tab }, ''); } catch (err) {}
+    return;
+  }
+  var st = e && e.state;
+  var target = st && st.hisabTab ? st.hisabTab : 'dashboard';
+  if (target !== S.tab) {
+    S.tab = target;
+    renderAll(true);
+    try { window.scrollTo(0, 0); } catch (err2) {}
+    return;
+  }
+  /* Back on the main tab: first press asks, second press (within 2s) exits. */
+  var now = Date.now();
+  if (S.tab === 'dashboard' && now - _lastExitAsk < 2000) {
+    _exitingApp = true;
+    setTimeout(function () { _exitingApp = false; }, 1500);
+    try { history.back(); } catch (err3) {}
+    return;
+  }
+  _lastExitAsk = now;
+  toast('Press back again to exit');
+  try { history.pushState({ hisabTab: S.tab }, ''); } catch (err4) {}
 }
 
 function renderHeader() {
@@ -1523,11 +1579,11 @@ function renderDashboard() {
     });
   });
   syncSegmented($('#period-switch'));
-  $('#dash-all').addEventListener('click', function () { S.tab = 'entries'; renderAll(true); });
-  $('#dash-balances').addEventListener('click', function () { S.tab = 'balances'; renderAll(true); });
+  $('#dash-all').addEventListener('click', function () { goTab('entries'); });
+  $('#dash-balances').addEventListener('click', function () { goTab('balances'); });
   $all('#tab-dashboard .hbar').forEach(function (h) {
     h.addEventListener('click', function () {
-      S.filterQ = h.getAttribute('data-party'); S.filterType = 'all'; S.tab = 'entries'; renderAll(true);
+      S.filterQ = h.getAttribute('data-party'); S.filterType = 'all'; goTab('entries');
     });
   });
   bindEntryRows(root);
@@ -1673,7 +1729,7 @@ function renderBalances() {
   if (bp && list.length) bp.addEventListener('click', function () { openReportModal({ period: 'all' }); });
   $all('#tab-balances .party-card').forEach(function (c) {
     c.addEventListener('click', function () {
-      S.filterQ = c.dataset.party; S.filterType = 'all'; S.tab = 'entries'; renderAll(true);
+      S.filterQ = c.dataset.party; S.filterType = 'all'; goTab('entries');
     });
   });
   countUp(root);
@@ -1834,8 +1890,7 @@ function loadSampleData() {
                     amount: s.a, party: s.p, note: 'sample' });
       });
       setPortalEntries(list);
-      S.tab = 'dashboard';
-      renderAll(true);
+      goTab('dashboard');
       toast('Sample entries added.');
     });
 }
@@ -2225,6 +2280,14 @@ function handleEntrySubmit(ev) {
 
 /* ---------------- init & wiring ---------------- */
 document.addEventListener('DOMContentLoaded', function () {
+  /* Phone back button: one history entry per tab, plus a guard entry so the
+   * first back press on the main tab asks instead of closing the app. */
+  try {
+    history.replaceState({ hisabTab: 'dashboard' }, '');
+    history.pushState({ hisabTab: 'dashboard' }, '');
+  } catch (e) {}
+  window.addEventListener('popstate', onPhoneBack);
+
   $('#login-form').addEventListener('submit', handleLogin);
   $('#create-form').addEventListener('submit', handleCreate);
   $('#show-create').addEventListener('click', function () {
@@ -2240,8 +2303,7 @@ document.addEventListener('DOMContentLoaded', function () {
   $all('.nav-btn').forEach(function (b) {
     b.addEventListener('click', function () {
       if (S.tab === b.dataset.tab) { try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) {} return; }
-      S.tab = b.dataset.tab; renderAll(true);
-      try { window.scrollTo(0, 0); } catch (e) {}
+      goTab(b.dataset.tab);
     });
   });
 
