@@ -339,7 +339,45 @@ function setPortalEntries(list) {
 function queueDriveSave() {
   if (S.user && S.user.kind === 'google' && typeof Drive !== 'undefined') {
     Drive.scheduleSave(drivePayload);
+    autoSyncAfterSave();
   }
+}
+/* After a local edit, push to Drive right away when online instead of
+ * waiting for the user to tap sync. A live token syncs silently; when the
+ * token is gone the Save tap itself is the user gesture for the one
+ * re-auth popup (tokens live ~1h). Offline: the pill already says
+ * "Offline — will sync", so do nothing here. */
+function autoSyncAfterSave() {
+  if (!S.user || S.user.kind !== 'google' || typeof Drive === 'undefined') return;
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+  if (typeof Drive.configured === 'function' && !Drive.configured()) return;
+  if (Drive.getStatus() === 'syncing') return;
+  if (Drive.hasToken()) {
+    Drive.syncNow().then(function (res) {
+      if (res && res.remote) applyRemoteEntries(res.remote);
+      if (!Drive.hasToken()) reauthAndSync(); /* token died mid-sync */
+    });
+  } else {
+    reauthAndSync();
+  }
+}
+/* Re-authenticate (one popup, allowed because the user just tapped Save)
+ * then push the pending edit immediately and pull anything newer. */
+function reauthAndSync() {
+  setGoogleBusy(true);
+  Drive.signIn(S.user.id).then(function () {
+    return Drive.flushSave();
+  }).then(function () {
+    return Drive.syncNow();
+  }).then(function (res) {
+    if (res && res.remote) applyRemoteEntries(res.remote);
+  }).catch(function (err) {
+    /* Popup closed/failed: back to "Waiting to sync" — one tap retries. */
+    Drive.scheduleSave(drivePayload);
+    if (err && err.message !== 'popup_closed_by_user') toast(googleErrorText(err));
+  }).then(function () {
+    setGoogleBusy(false);
+  });
 }
 /* Snapshot uploaded to Drive on every mutation (last write wins). */
 function drivePayload() {

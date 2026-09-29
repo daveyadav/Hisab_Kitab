@@ -446,9 +446,9 @@ function drivePayloadFor(email, descs) {
       c.sandbox.S.entries.personal.some(e => e.desc === 'Cached momo'));
   }
 
-  // B7b: boot never contacts Google; a calm "Waiting to sync" appears only
-  // when the user changes something that actually needs syncing. The tap
-  // is an explicit interactive reconnect (user gesture → popup allowed).
+  // B7b: boot never contacts Google; after an edit while online the app
+  // syncs right away — the Save tap is the user gesture for the one
+  // interactive re-auth (tokens live ~1h), no extra tap needed.
   {
     const c = makeContext();
     c.store['hisab_session_v2'] = JSON.stringify({ kind: 'google', id: 'ana@example.com' });
@@ -465,26 +465,25 @@ function drivePayloadFor(email, descs) {
     const pill = c.$('#sync-pill');
     check('B7b no nag at boot — pill Ready',
       pill.hidden === false && /ready/i.test(pill.innerHTML), pill.innerHTML);
-    /* User adds an entry → now a sync is actually due → the pill may ask. */
+    /* User adds an entry while online → the app re-auths and syncs on its
+     * own; the token request is interactive (from the Save tap), never silent. */
+    c.fake.currentEmail = 'ana@example.com'; /* user approves the popup */
+    const reqsBeforeEdit = c.fake.tokenRequests.length;
     c.sandbox.addEntry({ ts: Date.now(), type: 'cash_purchase', desc: 'New chiya', amount: 80, party: '', note: '' });
-    await tick(400);
-    check('B7b pill shows "Waiting to sync" only when a sync is due',
-      /waiting to sync/i.test(pill.innerHTML), pill.innerHTML);
-    check('B7b the edit triggered no silent token request',
-      c.fake.tokenRequests.length === 0,
-      JSON.stringify(c.fake.tokenRequests));
-    const reqsBeforeTap = c.fake.tokenRequests.length;
-    c.fake.currentEmail = 'ana@example.com'; /* tap signs back into the same account */
-    pill.click();
-    await tick(150);
-    check('B7b tapping triggers an interactive reconnect, never a silent one',
-      c.fake.tokenRequests.length === reqsBeforeTap + 1 &&
+    await tick(900);
+    check('B7b the edit triggered an interactive token request, never a silent one',
+      c.fake.tokenRequests.length === reqsBeforeEdit + 1 &&
       c.fake.tokenRequests[c.fake.tokenRequests.length - 1].prompt !== 'none',
       JSON.stringify(c.fake.tokenRequests));
+    check('B7b pill shows Synced after the auto-sync',
+      /synced/i.test(pill.innerHTML), pill.innerHTML);
+    check('B7b the auto-sync uploaded the new entry',
+      c.fake.uploadCalls().length >= 1, String(c.fake.uploadCalls().length));
   }
 
   // B7f: reconnecting after offline edits keeps them — the stale remote
-  // copy must not wipe entries made while the token was expired
+  // copy must not wipe entries made while the token was expired. Online
+  // edits now auto-sync (the Save tap re-auths), so no pill tap is needed.
   {
     const c = makeContext();
     c.store['hisab_session_v2'] = JSON.stringify({ kind: 'google', id: 'ana@example.com' });
@@ -495,16 +494,14 @@ function drivePayloadFor(email, descs) {
     c.fireReady();
     c.fireLoad();
     await tick(900);
+    c.fake.currentEmail = 'ana@example.com'; /* user approves the auto re-auth */
     c.sandbox.addEntry({ ts: Date.now(), type: 'cash_purchase', desc: 'Offline chiya', amount: 80, party: '', note: '' });
-    await tick(400);
-    c.fake.currentEmail = 'ana@example.com';
-    c.$('#sync-pill').click(); /* tap to reconnect */
     await tick(900);
     const descs = c.sandbox.S.entries.personal.map(e => e.desc);
-    check('B7f offline edits survive the reconnect tap',
+    check('B7f offline edits survive the auto-sync',
       descs.includes('Cached momo') && descs.includes('Offline chiya'), descs.join(','));
     const ups = c.fake.uploadCalls();
-    check('B7f reconnect uploads instead of staying silent', ups.length >= 1, String(ups.length));
+    check('B7f auto-sync uploads instead of staying silent', ups.length >= 1, String(ups.length));
     const stored = c.fake.stores['ana@example.com'];
     const latest = stored ? JSON.parse(Object.values(stored.files)[0].content) : null;
     const upDescs = latest ? latest.entries.personal.map(e => e.desc) : [];
@@ -1158,6 +1155,50 @@ function drivePayloadFor(email, descs) {
     check('B14f back closes the sheet instead of leaving the tab',
       c.$('#entry-modal').hidden === true && c.sandbox.S.tab === 'entries',
       c.sandbox.S.tab + '/' + c.$('#entry-modal').hidden);
+  }
+
+  // B15: auto-sync after save — online+token syncs at once, offline waits, no token re-auths.
+  {
+    const c = makeContext();
+    c.sandbox.S.user = { kind: 'google', id: 'g@test.com' };
+    c.sandbox.S.entries = { personal: [], business: [] };
+    c.sandbox.S.profile = { nickname: '' };
+    const calls = [];
+    const D = c.sandbox.Drive;
+    D.hasToken = () => D._tok;
+    D.getStatus = () => D._st;
+    D.configured = () => true;
+    D.scheduleSave = () => {};
+    D.syncNow = () => { calls.push('syncNow'); return Promise.resolve({ action: 'ok', pushed: true, remote: null }); };
+    D.signIn = () => { calls.push('signIn'); return Promise.resolve({}); };
+    D.flushSave = () => Promise.resolve(true);
+    c.windowStub.navigator.onLine = true;
+
+    D._tok = true; D._st = 'idle';
+    c.sandbox.queueDriveSave();
+    await tick(20);
+    check('B15a online + token → syncs immediately', calls.join(',') === 'syncNow', calls.join(','));
+
+    calls.length = 0;
+    D._tok = true; D._st = 'syncing';
+    c.sandbox.queueDriveSave();
+    await tick(20);
+    check('B15b already syncing → no duplicate sync', calls.length === 0, calls.join(','));
+
+    calls.length = 0;
+    D._tok = false; D._st = 'reauth';
+    c.sandbox.setGoogleBusy = () => {};
+    c.sandbox.queueDriveSave();
+    await tick(20);
+    check('B15c online, no token → re-auth then sync', calls.join(',') === 'signIn,syncNow', calls.join(','));
+
+    calls.length = 0;
+    D._tok = true; D._st = 'idle';
+    c.windowStub.navigator.onLine = false;
+    c.sandbox.queueDriveSave();
+    await tick(20);
+    check('B15d offline → no sync attempt (waits)', calls.length === 0, calls.join(','));
+    c.windowStub.navigator.onLine = true;
   }
 
   // B10d: the account modal shows an honest offline-readiness line
