@@ -260,10 +260,114 @@ function shiftMonth(key, n) {
 function monthLabel(key) { return _dtfMon.format(Date.UTC(+key.slice(0, 4), +key.slice(5, 7) - 1, 15)); }
 function monthLong(key) { return _dtfMonYear.format(Date.UTC(+key.slice(0, 4), +key.slice(5, 7) - 1, 15)); }
 
-/* Nepal uses lakh/crore grouping: 1,25,000 — en-IN matches. */
-function fmtRs(n) {
-  var v = Math.round(Number(n) || 0);
-  return (v < 0 ? '−' : '') + 'Rs ' + Math.abs(v).toLocaleString('en-IN');
+/* ---------------- currency ----------------
+ * One ISO code per account, stored in the profile (syncs with the khata).
+ * Amounts are stored as plain numbers — the currency only changes display. */
+var CURRENCIES = [
+  { code: 'NPR', name: 'Nepalese Rupee',     symbol: 'Rs',  locale: 'en-IN', dec: 0, gap: true  },
+  { code: 'INR', name: 'Indian Rupee',       symbol: '₹',   locale: 'en-IN', dec: 0, gap: false },
+  { code: 'USD', name: 'US Dollar',          symbol: '$',   locale: 'en-US', dec: 2, gap: false },
+  { code: 'EUR', name: 'Euro',               symbol: '€',   locale: 'en-US', dec: 2, gap: false },
+  { code: 'GBP', name: 'British Pound',      symbol: '£',   locale: 'en-GB', dec: 2, gap: false },
+  { code: 'AUD', name: 'Australian Dollar',  symbol: 'A$',  locale: 'en-AU', dec: 2, gap: false },
+  { code: 'CAD', name: 'Canadian Dollar',    symbol: 'C$',  locale: 'en-CA', dec: 2, gap: false },
+  { code: 'NZD', name: 'New Zealand Dollar', symbol: 'NZ$', locale: 'en-NZ', dec: 2, gap: false },
+  { code: 'SGD', name: 'Singapore Dollar',   symbol: 'S$',  locale: 'en-SG', dec: 2, gap: false },
+  { code: 'HKD', name: 'Hong Kong Dollar',   symbol: 'HK$', locale: 'en-HK', dec: 2, gap: false },
+  { code: 'JPY', name: 'Japanese Yen',       symbol: '¥',   locale: 'en-US', dec: 0, gap: false },
+  { code: 'CNY', name: 'Chinese Yuan',       symbol: '¥',   locale: 'en-US', dec: 2, gap: false },
+  { code: 'KRW', name: 'South Korean Won',   symbol: '₩',   locale: 'en-US', dec: 0, gap: false },
+  { code: 'CHF', name: 'Swiss Franc',        symbol: 'CHF', locale: 'en-CH', dec: 2, gap: true  },
+  { code: 'MYR', name: 'Malaysian Ringgit',  symbol: 'RM',  locale: 'en-MY', dec: 2, gap: true  },
+  { code: 'THB', name: 'Thai Baht',          symbol: '฿',   locale: 'en-US', dec: 2, gap: false },
+  { code: 'AED', name: 'UAE Dirham',         symbol: 'AED', locale: 'en-AE', dec: 2, gap: true  },
+  { code: 'SAR', name: 'Saudi Riyal',        symbol: 'SAR', locale: 'en-SA', dec: 2, gap: true  },
+  { code: 'QAR', name: 'Qatari Riyal',       symbol: 'QR',  locale: 'en-QA', dec: 2, gap: true  },
+  { code: 'KWD', name: 'Kuwaiti Dinar',      symbol: 'KD',  locale: 'en-KW', dec: 2, gap: true  },
+  { code: 'BHD', name: 'Bahraini Dinar',     symbol: 'BD',  locale: 'en-BH', dec: 2, gap: true  },
+  { code: 'PKR', name: 'Pakistani Rupee',    symbol: 'Rs',  locale: 'en-PK', dec: 0, gap: true  },
+  { code: 'BDT', name: 'Bangladeshi Taka',   symbol: '৳',   locale: 'en-BD', dec: 0, gap: false },
+  { code: 'LKR', name: 'Sri Lankan Rupee',   symbol: 'Rs',  locale: 'en-LK', dec: 0, gap: true  },
+  { code: 'MVR', name: 'Maldivian Rufiyaa',  symbol: 'Rf',  locale: 'en-MV', dec: 2, gap: true  },
+  { code: 'BTN', name: 'Bhutanese Ngultrum', symbol: 'Nu',  locale: 'en-BT', dec: 0, gap: true  },
+  { code: 'PHP', name: 'Philippine Peso',    symbol: '₱',   locale: 'en-PH', dec: 2, gap: false },
+  { code: 'IDR', name: 'Indonesian Rupiah',  symbol: 'Rp',  locale: 'en-ID', dec: 0, gap: true  },
+  { code: 'VND', name: 'Vietnamese Dong',    symbol: '₫',   locale: 'en-VN', dec: 0, gap: false },
+  { code: 'SEK', name: 'Swedish Krona',      symbol: 'kr',  locale: 'en-US', dec: 2, gap: true  },
+  { code: 'NOK', name: 'Norwegian Krone',    symbol: 'kr',  locale: 'en-US', dec: 2, gap: true  },
+  { code: 'DKK', name: 'Danish Krone',       symbol: 'kr',  locale: 'en-US', dec: 2, gap: true  },
+  { code: 'TRY', name: 'Turkish Lira',       symbol: '₺',   locale: 'en-US', dec: 2, gap: false },
+  { code: 'ZAR', name: 'South African Rand', symbol: 'R',   locale: 'en-ZA', dec: 2, gap: true  }
+];
+function currencyByCode(code) {
+  for (var i = 0; i < CURRENCIES.length; i++) if (CURRENCIES[i].code === code) return CURRENCIES[i];
+  return CURRENCIES[0]; /* NPR */
+}
+function validCurrency(code) { return currencyByCode(code).code; }
+function cur() { return currencyByCode(S.profile && S.profile.currency); }
+/* Money follows the account's currency. Nepal/India keep lakh/crore
+ * grouping (en-IN); amounts stay plain numbers in storage. */
+function fmtMoney(n) {
+  var c = cur(), v = Number(n) || 0, neg = v < 0, a = Math.abs(v);
+  var str = c.dec
+    ? a.toLocaleString(c.locale, { minimumFractionDigits: c.dec, maximumFractionDigits: c.dec })
+    : Math.round(a).toLocaleString(c.locale);
+  return (neg ? '−' : '') + c.symbol + (c.gap ? ' ' : '') + str;
+}
+function setCurrency(code) {
+  code = validCurrency(code);
+  if (!S.profile || S.profile.currency === code) return false;
+  S.profile.currency = code;
+  saveProfile(); /* persists, queues a Drive sync */
+  return true;
+}
+/* Bottom-sheet currency picker: searchable list, tap to switch. */
+function currencySample(c) {
+  var str = c.dec
+    ? (1250).toLocaleString(c.locale, { minimumFractionDigits: c.dec, maximumFractionDigits: c.dec })
+    : (125000).toLocaleString(c.locale);
+  return c.symbol + (c.gap ? ' ' : '') + str;
+}
+function currencyRowHTML(c, selected) {
+  return '<button class="currency-row" type="button" role="option" aria-selected="' + (selected ? 'true' : 'false') + '" data-code="' + c.code + '">' +
+    '<span class="cur-badge">' + esc(c.symbol) + '</span>' +
+    '<span class="cur-meta"><b>' + esc(c.name) + '</b><span>' + c.code + ' · ' + esc(currencySample(c)) + '</span></span>' +
+    '<span class="cur-check">' + (selected ? icon('check') : '') + '</span></button>';
+}
+function renderCurrencyList(filter) {
+  var list = $('#currency-list');
+  if (!list) return;
+  var q = String(filter || '').trim().toLowerCase();
+  var html = '';
+  CURRENCIES.forEach(function (c) {
+    if (q && c.name.toLowerCase().indexOf(q) < 0 && c.code.toLowerCase().indexOf(q) < 0) return;
+    html += currencyRowHTML(c, cur().code === c.code);
+  });
+  list.innerHTML = html || '<p class="hint center">No currency matches.</p>';
+  $all('.currency-row', list).forEach(function (row) {
+    row.addEventListener('click', function () {
+      if (setCurrency(row.getAttribute('data-code'))) {
+        toast('Currency: ' + cur().name + ' (' + cur().code + ')');
+        renderAll(false);
+      }
+      closeModal('#currency-modal');
+    });
+  });
+}
+function openCurrencyPicker() {
+  var s = $('#currency-search');
+  if (s) s.value = '';
+  renderCurrencyList('');
+  openModal('#currency-modal');
+  setTimeout(function () { if (s && s.focus) s.focus(); }, 280);
+}
+function populateCurrencySelect() {
+  var sel = $('#create-currency');
+  if (!sel || (sel.options && sel.options.length)) return;
+  sel.innerHTML = CURRENCIES.map(function (c) {
+    return '<option value="' + c.code + '"' + (c.code === 'NPR' ? ' selected' : '') + '>' +
+      esc(c.symbol + ' — ' + c.name + ' (' + c.code + ')') + '</option>';
+  }).join('');
 }
 function fmtNum(n) { return Math.round(Number(n) || 0).toLocaleString('en-IN'); }
 /* Compact, lakh-aware: 950 · 12.5K · 3.2L · 1.1Cr */
@@ -302,7 +406,7 @@ function avatarHTML(name, picture, cls) {
 /* ---------------- app state ---------------- */
 var S = {
   user: null,            // { kind:'local'|'google', id, displayName, picture }
-  profile: { nickname: '', dismissedNudge: false },
+  profile: { nickname: '', dismissedNudge: false, currency: 'NPR' },
   portal: 'personal',    // 'personal' | 'business'
   tab: 'dashboard',
   period: '30d',         // dashboard period
@@ -383,7 +487,7 @@ function reauthAndSync() {
 function drivePayload() {
   return {
     app: 'hisab', version: 4, updatedAt: Date.now(),
-    profile: { nickname: (S.profile && S.profile.nickname) || '' },
+    profile: { nickname: (S.profile && S.profile.nickname) || '', currency: (S.profile && S.profile.currency) || 'NPR' },
     entries: S.entries
   };
 }
@@ -393,7 +497,7 @@ function validEntriesShape(e) {
 function cleanNickname(v) { return String(v || '').replace(/\s+/g, ' ').trim().slice(0, 30); }
 function loadProfileFor(storeKey) {
   var p = loadJSON(profileKeyFor(storeKey), null) || {};
-  return { nickname: cleanNickname(p.nickname), dismissedNudge: !!p.dismissedNudge };
+  return { nickname: cleanNickname(p.nickname), dismissedNudge: !!p.dismissedNudge, currency: validCurrency(p.currency) };
 }
 function saveProfile() {
   saveJSON(profileKey(), S.profile);
@@ -485,6 +589,10 @@ function boot() {
   $('#entry-close').innerHTML = icon('x');
   $('#account-close').innerHTML = icon('x');
   $('#report-close').innerHTML = icon('x');
+  $('#currency-close').innerHTML = icon('x');
+  $('#currency-close').addEventListener('click', function () { closeModal('#currency-modal'); });
+  $('#currency-search').addEventListener('input', function (ev) { renderCurrencyList(ev.target.value); });
+  populateCurrencySelect();
   var navIcons = { dashboard: 'chart', entries: 'list', balances: 'swap', more: 'dots' };
   $all('.nav-btn').forEach(function (b) {
     $('.nav-ico', b).innerHTML = icon(navIcons[b.dataset.tab]);
@@ -587,7 +695,7 @@ function logout() {
   if (S.user && S.user.kind === 'google' && typeof Drive !== 'undefined') Drive.signOut();
   try { localStorage.removeItem(LS_SESSION); } catch (e) {}
   S.user = null;
-  S.profile = { nickname: '', dismissedNudge: false };
+  S.profile = { nickname: '', dismissedNudge: false, currency: 'NPR' };
   clearPrintedReport();
   $('#login-username').value = '';
   $('#login-password').value = '';
@@ -616,7 +724,9 @@ function handleCreate(e) {
     var account = { name: name, salt: salt, algo: h.algo, passHash: h.hash, createdAt: Date.now() };
     accounts[key] = account;
     saveAccounts(accounts);
-    if (nick) saveJSON(profileKeyFor(key), { nickname: nick, dismissedNudge: false });
+    var curSel = $('#create-currency');
+    var startCurrency = curSel ? validCurrency(curSel.value) : 'NPR';
+    saveJSON(profileKeyFor(key), { nickname: nick, dismissedNudge: false, currency: startCurrency });
     err.hidden = true;
     $('#create-form').reset();
     loginAs(localUserFrom(account));   // signed straight in
@@ -806,6 +916,15 @@ function applyRemoteNickname(remote) {
     saveJSON(profileKey(), local);
   }
 }
+function applyRemoteCurrency(remote) {
+  if (remote && remote.profile && typeof remote.profile.currency === 'string') {
+    var code = validCurrency(remote.profile.currency);
+    var local = loadProfileFor(accountStoreKey());
+    local.currency = code;
+    saveJSON(profileKey(), local);
+    if (S.profile) S.profile.currency = code; /* re-render in the new currency */
+  }
+}
 function applyRemoteEntries(remote) {
   if (!remote || !validEntriesShape(remote.entries)) return false;
   S.entries = remote.entries;
@@ -813,6 +932,7 @@ function applyRemoteEntries(remote) {
   if (!Array.isArray(S.entries.business)) S.entries.business = [];
   saveJSON(dataKey(), S.entries);
   applyRemoteNickname(remote);
+  applyRemoteCurrency(remote);
   renderAll(false);
   return true;
 }
@@ -1253,7 +1373,7 @@ function donutChart(id, byType) {
     var v = byType[k];
     if (!v) return;
     legend += '<button type="button" data-k="' + k + '"><i style="background:var(--' + TYPES[k].color + ')"></i><span>' + esc(TYPES[k].label) +
-      '</span><span class="a">' + fmtRs(v) + '</span><span class="p">' + Math.round(v / total * 100) + '%</span></button>';
+      '</span><span class="a">' + fmtMoney(v) + '</span><span class="p">' + Math.round(v / total * 100) + '%</span></button>';
   });
   CHARTS[id] = { kind: 'donut', total: total, byType: byType };
   return '<div class="donut-wrap" id="' + id + '"><div class="donut"><svg viewBox="0 0 160 160" role="img" aria-label="Activity by entry type">' +
@@ -1281,11 +1401,11 @@ function bindColumnChart(id) {
     if (data.kind === 'flow') {
       var b = data.buckets[i], net = b.in - b.out;
       html = '<b>' + esc(b.long) + '</b>' +
-        '<div class="r"><span><i style="background:var(--s-in)"></i>Money in</span><span>' + fmtRs(b.in) + '</span></div>' +
-        '<div class="r"><span><i style="background:var(--s-out)"></i>Money out</span><span>' + fmtRs(b.out) + '</span></div>' +
-        '<div class="r" style="margin-top:3px;opacity:.8"><span>Net</span><span>' + (net > 0 ? '+' : '') + fmtRs(net) + '</span></div>';
+        '<div class="r"><span><i style="background:var(--s-in)"></i>Money in</span><span>' + fmtMoney(b.in) + '</span></div>' +
+        '<div class="r"><span><i style="background:var(--s-out)"></i>Money out</span><span>' + fmtMoney(b.out) + '</span></div>' +
+        '<div class="r" style="margin-top:3px;opacity:.8"><span>Net</span><span>' + (net > 0 ? '+' : '') + fmtMoney(net) + '</span></div>';
     } else {
-      html = '<b>' + WEEKDAYS_LONG[i] + 's</b><div class="r"><span>Spent</span><span>' + fmtRs(data.values[i]) + '</span></div>';
+      html = '<b>' + WEEKDAYS_LONG[i] + 's</b><div class="r"><span>Spent</span><span>' + fmtMoney(data.values[i]) + '</span></div>';
     }
     tip.innerHTML = html;
     var wr = wrap.getBoundingClientRect(), sr = slot.getBoundingClientRect();
@@ -1340,7 +1460,7 @@ function countUp(root) {
   els.forEach(function (el) {
     var target = Number(el.getAttribute('data-count')) || 0;
     var fmt = el.getAttribute('data-fmt') === 'n' ? fmtNum : el.getAttribute('data-fmt') === 'signed'
-      ? function (v) { return (v > 0 ? '+' : '') + fmtRs(v); } : fmtRs;
+      ? function (v) { return (v > 0 ? '+' : '') + fmtMoney(v); } : fmtMoney;
     if (reduce || !target) { el.textContent = fmt(target); return; }
     var t0 = null, dur = 900;
     function step(now) {
@@ -1411,7 +1531,7 @@ function goTab(t) {
 }
 /* Close the topmost open layer. Returns true when one was open. */
 function closeTopmostLayer() {
-  var sels = ['#confirm-modal', '#entry-modal', '#report-modal', '#account-modal'];
+  var sels = ['#confirm-modal', '#currency-modal', '#entry-modal', '#report-modal', '#account-modal'];
   for (var i = 0; i < sels.length; i++) {
     var m = $(sels[i]);
     if (m && !m.hidden) {
@@ -1477,7 +1597,7 @@ function entryRow(e, showDate) {
     '<span class="e-ico t-' + e.type + '">' + icon(t.icon) + '</span>' +
     '<span class="e-main"><span class="e-desc">' + esc(e.desc) + '</span>' +
     '<span class="e-sub">' + sub + '</span></span>' +
-    '<span class="e-amt ' + amtCls + '">' + sign + fmtRs(e.amount) + '</span></button>';
+    '<span class="e-amt ' + amtCls + '">' + sign + fmtMoney(e.amount) + '</span></button>';
 }
 function bindEntryRows(root) {
   $all('.entry-row', root).forEach(function (r) {
@@ -1529,10 +1649,10 @@ function renderDashboard() {
   /* hero */
   var hero = '<div class="hero span-7">' +
     '<div class="k">' + icon('cart') + 'Spent · ' + esc(per.long) + ' ' + deltaChip(c.spent, pv && pv.spent, false, true) + '</div>' +
-    '<div class="v" data-count="' + c.spent + '">' + fmtRs(c.spent) + '</div>' +
-    '<div class="sub"><div>Money out<b data-count="' + c.out + '">' + fmtRs(c.out) + '</b></div>' +
-    '<div>Money in<b data-count="' + c.in + '">' + fmtRs(c.in) + '</b></div>' +
-    '<div>Avg / day<b data-count="' + Math.round(c.spent / Math.max(1, A.w.days)) + '">' + fmtRs(c.spent / Math.max(1, A.w.days)) + '</b></div></div>' +
+    '<div class="v" data-count="' + c.spent + '">' + fmtMoney(c.spent) + '</div>' +
+    '<div class="sub"><div>Money out<b data-count="' + c.out + '">' + fmtMoney(c.out) + '</b></div>' +
+    '<div>Money in<b data-count="' + c.in + '">' + fmtMoney(c.in) + '</b></div>' +
+    '<div>Avg / day<b data-count="' + Math.round(c.spent / Math.max(1, A.w.days)) + '">' + fmtMoney(c.spent / Math.max(1, A.w.days)) + '</b></div></div>' +
     '<div class="spark">' + sparkline(A.w.buckets.map(function (b) { return b.spent; })) + '</div></div>';
 
   /* position (all-time) */
@@ -1540,18 +1660,18 @@ function renderDashboard() {
   var netPos = net.owed - net.owe;
   var position = '<div class="panel position span-5"><div class="panel-head"><div><h3>Where you stand</h3><p>Outstanding balances · all time</p></div>' +
     '<button class="link-btn" id="dash-balances" type="button">Details</button></div>' +
-    '<div class="nums"><div><div class="k">I owe</div><div class="v neg" data-count="' + net.owe + '">' + fmtRs(net.owe) + '</div></div>' +
-    '<div style="text-align:right"><div class="k">Owed to me</div><div class="v pos" data-count="' + net.owed + '">' + fmtRs(net.owed) + '</div></div></div>' +
-    (sum ? '<div class="split" role="img" aria-label="I owe ' + fmtRs(net.owe) + ', owed to me ' + fmtRs(net.owed) + '">' +
+    '<div class="nums"><div><div class="k">I owe</div><div class="v neg" data-count="' + net.owe + '">' + fmtMoney(net.owe) + '</div></div>' +
+    '<div style="text-align:right"><div class="k">Owed to me</div><div class="v pos" data-count="' + net.owed + '">' + fmtMoney(net.owed) + '</div></div></div>' +
+    (sum ? '<div class="split" role="img" aria-label="I owe ' + fmtMoney(net.owe) + ', owed to me ' + fmtMoney(net.owed) + '">' +
       (net.owe ? '<i style="width:' + owePct + '%;background:var(--neg)"></i>' : '') +
       (net.owed ? '<i style="width:' + (100 - owePct) + '%;background:var(--pos);animation-delay:.15s"></i>' : '') + '</div>'
       : '<div class="split"></div>') +
-    '<div class="net-line"><span>' + (netPos === 0 ? 'All square' : netPos > 0 ? 'Net, others owe you' : 'Net, you owe others') + '</span><b data-count="' + netPos + '" data-fmt="signed">' + (netPos > 0 ? '+' : '') + fmtRs(netPos) + '</b></div></div>';
+    '<div class="net-line"><span>' + (netPos === 0 ? 'All square' : netPos > 0 ? 'Net, others owe you' : 'Net, you owe others') + '</span><b data-count="' + netPos + '" data-fmt="signed">' + (netPos > 0 ? '+' : '') + fmtMoney(netPos) + '</b></div></div>';
 
   /* KPI tiles */
   function kpi(label, ico, color, value, fmt, delta) {
     return '<div class="kpi"><div class="k"><span class="ico" style="background:color-mix(in srgb,' + color + ' 14%,transparent);color:' + color + '">' + icon(ico) + '</span>' + esc(label) + '</div>' +
-      '<div class="v" data-count="' + value + '"' + (fmt ? ' data-fmt="' + fmt + '"' : '') + '>' + (fmt === 'n' ? fmtNum(value) : fmt === 'signed' ? (value > 0 ? '+' : '') + fmtRs(value) : fmtRs(value)) + '</div>' +
+      '<div class="v" data-count="' + value + '"' + (fmt ? ' data-fmt="' + fmt + '"' : '') + '>' + (fmt === 'n' ? fmtNum(value) : fmt === 'signed' ? (value > 0 ? '+' : '') + fmtMoney(value) : fmtMoney(value)) + '</div>' +
       '<div class="foot">' + delta + '</div></div>';
   }
   var kpis = '<div class="kpi-grid span-12">' +
@@ -1578,11 +1698,11 @@ function renderDashboard() {
   var people = '<div class="panel span-4"><div class="panel-head"><div><h3>Top people &amp; shops</h3><p>By amount · ' + esc(per.long.toLowerCase()) + '</p></div></div>' +
     (parties.length ? '<div class="hbars">' + parties.map(function (p, i) {
       var b = bal[p.party] || { payable: 0, receivable: 0 }, meta = [];
-      if (b.payable > 0) meta.push('<span class="owe">You owe ' + fmtRs(b.payable) + '</span>');
-      if (b.receivable > 0) meta.push('<span class="owed">Owes you ' + fmtRs(b.receivable) + '</span>');
+      if (b.payable > 0) meta.push('<span class="owe">You owe ' + fmtMoney(b.payable) + '</span>');
+      if (b.receivable > 0) meta.push('<span class="owed">Owes you ' + fmtMoney(b.receivable) + '</span>');
       if (!meta.length) meta.push('Settled');
       return '<button class="hbar" type="button" data-party="' + esc(p.party) + '">' + avatarHTML(p.party) +
-        '<span><span class="row"><b>' + esc(p.party) + '</b><span>' + fmtRs(p.volume) + '</span></span>' +
+        '<span><span class="row"><b>' + esc(p.party) + '</b><span>' + fmtMoney(p.volume) + '</span></span>' +
         '<span class="track" style="display:block"><span class="fill" style="display:block;width:' + (p.volume / maxVol * 100) + '%;--i:' + i + '"></span></span>' +
         '<span class="meta" style="display:block">' + p.count + ' entr' + (p.count === 1 ? 'y' : 'ies') + ' · ' + meta.join(' · ') + '</span></span></button>';
     }).join('') + '</div>' : emptyMini('Add a person or shop name to entries to see them here.')) + '</div>';
@@ -1596,10 +1716,10 @@ function renderDashboard() {
   Object.keys(c.byDay).forEach(function (k) { if (!busiest || c.byDay[k] > busiest.v) busiest = { k: k, v: c.byDay[k] }; });
   var topParty = parties[0];
   var hl = '<div class="panel span-4"><div class="panel-head"><div><h3>Highlights</h3><p>' + esc(per.long) + '</p></div></div><div class="hl-grid">' +
-    '<div class="hl"><div class="k">Biggest entry</div><div class="v">' + (c.biggest ? fmtRs(c.biggest.amount) : '—') + '</div><div class="s">' + (c.biggest ? esc(c.biggest.desc) : 'Nothing yet') + '</div></div>' +
-    '<div class="hl"><div class="k">Busiest day</div><div class="v">' + (busiest ? fmtRs(busiest.v) : '—') + '</div><div class="s">' + (busiest ? esc(_dtfDate.format(dayStart(busiest.k) + DAY / 2)) : 'No purchases') + '</div></div>' +
-    '<div class="hl"><div class="k">Top person / shop</div><div class="v">' + (topParty ? esc(topParty.party) : '—') + '</div><div class="s">' + (topParty ? fmtRs(topParty.volume) + ' · ' + topParty.count + ' entr' + (topParty.count === 1 ? 'y' : 'ies') : 'No names yet') + '</div></div>' +
-    '<div class="hl"><div class="k">Cash vs due</div><div class="v">' + (c.spent ? Math.round(c.byType.cash_purchase / c.spent * 100) + '% cash' : '—') + '</div><div class="s">' + (c.spent ? fmtRs(c.byType.due_purchase) + ' bought on due' : 'No purchases') + '</div></div>' +
+    '<div class="hl"><div class="k">Biggest entry</div><div class="v">' + (c.biggest ? fmtMoney(c.biggest.amount) : '—') + '</div><div class="s">' + (c.biggest ? esc(c.biggest.desc) : 'Nothing yet') + '</div></div>' +
+    '<div class="hl"><div class="k">Busiest day</div><div class="v">' + (busiest ? fmtMoney(busiest.v) : '—') + '</div><div class="s">' + (busiest ? esc(_dtfDate.format(dayStart(busiest.k) + DAY / 2)) : 'No purchases') + '</div></div>' +
+    '<div class="hl"><div class="k">Top person / shop</div><div class="v">' + (topParty ? esc(topParty.party) : '—') + '</div><div class="s">' + (topParty ? fmtMoney(topParty.volume) + ' · ' + topParty.count + ' entr' + (topParty.count === 1 ? 'y' : 'ies') : 'No names yet') + '</div></div>' +
+    '<div class="hl"><div class="k">Cash vs due</div><div class="v">' + (c.spent ? Math.round(c.byType.cash_purchase / c.spent * 100) + '% cash' : '—') + '</div><div class="s">' + (c.spent ? fmtMoney(c.byType.due_purchase) + ' bought on due' : 'No purchases') + '</div></div>' +
     '</div></div>';
 
   /* recent */
@@ -1706,7 +1826,7 @@ function renderEntryList() {
   });
   var html = '<div class="summary-line"><span class="sl-left"><span class="muted">' + list.length + ' entr' + (list.length === 1 ? 'y' : 'ies') + '</span>' +
     (list.length ? '<button class="link-btn" id="entries-print" type="button">' + icon('printer') + 'Print</button>' : '') + '</span>' +
-    '<span class="total">Total ' + fmtRs(t.gross) + '</span></div>';
+    '<span class="total">Total ' + fmtMoney(t.gross) + '</span></div>';
   if (!list.length) {
     html += portalEntries().length
       ? '<div class="card empty"><div class="em-ico">' + icon('search') + '</div><p><b>Nothing found</b></p><p>Try a different search or filter.</p></div>'
@@ -1716,7 +1836,7 @@ function renderEntryList() {
       var day = groups[k];
       var dt = totalsFor(day);
       html += '<div class="day-group"><div class="day-head"><span class="d">' + esc(fmtDate(day[0].ts)) + '</span>' +
-        '<span class="t">' + fmtRs(dt.gross) + '</span></div><div class="list-card">' +
+        '<span class="t">' + fmtMoney(dt.gross) + '</span></div><div class="list-card">' +
         day.map(entryRow).join('') + '</div></div>';
     });
   }
@@ -1746,16 +1866,16 @@ function renderBalances() {
     return '<button class="party-card" data-party="' + esc(p.party) + '">' + avatarHTML(p.party) +
       '<span class="e-main"><span class="e-desc">' + esc(p.party) + '</span>' +
       '<span class="e-sub">' + p.count + ' entr' + (p.count === 1 ? 'y' : 'ies') + ' · tap to see</span></span>' +
-      '<span class="bal ' + cls + '">' + fmtRs(amount) + '</span>' + icon('chev', 'chev') + '</button>';
+      '<span class="bal ' + cls + '">' + fmtMoney(amount) + '</span>' + icon('chev', 'chev') + '</button>';
   }
 
   var html = '<div class="panel position"><div class="panel-head"><div><h3>' + esc(portalName()) + ' balances</h3><p>Everyone you have open accounts with</p></div>' +
       (list.length ? '<button class="link-btn" id="balances-print" type="button">' + icon('printer') + 'Print</button>' : '') + '</div>' +
-      '<div class="nums"><div><div class="k">I owe · total</div><div class="v neg" data-count="' + totOwe + '">' + fmtRs(totOwe) + '</div></div>' +
-      '<div style="text-align:right"><div class="k">Owed to me · total</div><div class="v pos" data-count="' + totOwed + '">' + fmtRs(totOwed) + '</div></div></div>' +
+      '<div class="nums"><div><div class="k">I owe · total</div><div class="v neg" data-count="' + totOwe + '">' + fmtMoney(totOwe) + '</div></div>' +
+      '<div style="text-align:right"><div class="k">Owed to me · total</div><div class="v pos" data-count="' + totOwed + '">' + fmtMoney(totOwed) + '</div></div></div>' +
       '<div class="split">' + (totOwe ? '<i style="width:' + owePct + '%;background:var(--neg)"></i>' : '') +
       (totOwed ? '<i style="width:' + (100 - owePct) + '%;background:var(--pos);animation-delay:.15s"></i>' : '') + '</div>' +
-      '<div class="net-line"><span>' + (netPos === 0 ? 'All square' : netPos > 0 ? 'Net, others owe you' : 'Net, you owe others') + '</span><b>' + (netPos > 0 ? '+' : '') + fmtRs(netPos) + '</b></div></div>' +
+      '<div class="net-line"><span>' + (netPos === 0 ? 'All square' : netPos > 0 ? 'Net, others owe you' : 'Net, you owe others') + '</span><b>' + (netPos > 0 ? '+' : '') + fmtMoney(netPos) + '</b></div></div>' +
     '<div class="section-title">I owe · payables</div>' +
     (oweList.length ? '<div class="list-card">' + oweList.map(function (p) { return partyCard(p, p.payable, 'owe'); }).join('') + '</div>'
                    : '<div class="card empty"><div class="em-ico">' + icon('check') + '</div><p><b>All clear</b></p><p>Nobody to pay right now.</p></div>') +
@@ -1778,6 +1898,7 @@ function renderBalances() {
 /* ---- more tab ---- */
 function renderMore() {
   var u = S.user;
+  var cc = cur();
   var html =
     '<div class="card profile-card">' + avatarHTML(displayName(), u.picture, 'lg') +
       '<div class="who"><b>' + esc(displayName()) + '</b><span>' + esc(u.kind === 'google' ? u.id : '@' + u.displayName + ' · device-only') + '</span>' +
@@ -1787,7 +1908,10 @@ function renderMore() {
     '<div class="section-title">Appearance</div>' +
     '<div class="card menu-card"><div class="menu-row"><span class="lbl">Theme</span>' +
       segmentedHTML('theme-switch', [{ v: 'system', label: 'Auto', icon: 'monitor' }, { v: 'light', label: 'Light', icon: 'sun' }, { v: 'dark', label: 'Dark', icon: 'moon' }], getTheme(), 'sm') +
-    '</div></div>' +
+    '</div>' +
+    '<button class="menu-item" id="m-currency" type="button"><span class="mi cur-badge">' + esc(cc.symbol) + '</span>' +
+      '<span>Currency<span class="sub">' + esc(cc.name) + ' (' + cc.code + ') · ' + esc(currencySample(cc)) + '</span></span>' + icon('chev', 'chev') + '</button>' +
+    '</div>' +
 
     '<div class="section-title">Print &amp; PDF</div>' +
     '<div class="card menu-card">' +
@@ -1819,6 +1943,7 @@ function renderMore() {
   $('#tab-more').innerHTML = html;
 
   $('#m-profile').addEventListener('click', function () { openAccountMenu(true); });
+  $('#m-currency').addEventListener('click', openCurrencyPicker);
   $all('#theme-switch button').forEach(function (b) {
     b.addEventListener('click', function () {
       setTheme(b.getAttribute('data-v'));
@@ -2011,7 +2136,7 @@ function balanceEffect(e) {
 }
 function balanceWords(n) {
   if (!n) return 'Settled';
-  return fmtRs(Math.abs(n)) + '<small>' + (n > 0 ? 'owes you' : 'you owe') + '</small>';
+  return fmtMoney(Math.abs(n)) + '<small>' + (n > 0 ? 'owes you' : 'you owe') + '</small>';
 }
 var TYPE_EFFECT = {
   cash_purchase: 'Money out', due_purchase: 'On due — I owe',
@@ -2053,19 +2178,19 @@ function buildReportHTML(o, r) {
       return '<div class="rp-tile"><span>' + k + '</span><b>' + v + '</b>' + (s ? '<small>' + s + '</small>' : '') + '</div>';
     };
     html += '<section class="rp-sec rp-keep"><h2>Summary</h2><div class="rp-tiles">' +
-      tile('Money out', fmtRs(st.out), 'Cash paid, given or paid back') +
-      tile('Money in', fmtRs(st.in), 'Cash taken, received back or earned') +
-      tile('Net cash flow', (netFlow > 0 ? '+' : '') + fmtRs(netFlow), netFlow > 0 ? 'More came in than went out' : netFlow < 0 ? 'More went out than came in' : 'In and out are equal') +
-      tile('Bought on due', fmtRs(st.byType.due_purchase), 'Purchases made on credit') +
-      tile('Spent on purchases', fmtRs(st.spent), 'Cash + on due') +
+      tile('Money out', fmtMoney(st.out), 'Cash paid, given or paid back') +
+      tile('Money in', fmtMoney(st.in), 'Cash taken, received back or earned') +
+      tile('Net cash flow', (netFlow > 0 ? '+' : '') + fmtMoney(netFlow), netFlow > 0 ? 'More came in than went out' : netFlow < 0 ? 'More went out than came in' : 'In and out are equal') +
+      tile('Bought on due', fmtMoney(st.byType.due_purchase), 'Purchases made on credit') +
+      tile('Spent on purchases', fmtMoney(st.spent), 'Cash + on due') +
       tile('Entries', fmtNum(st.count), '') +
       '</div>' +
       '<table class="rp-table"><thead><tr><th>Type</th><th class="n">Entries</th><th class="n">Amount</th><th>Effect</th></tr></thead><tbody>' +
       TYPE_ORDER.map(function (k) {
         return '<tr' + (cnt[k] ? '' : ' class="zero"') + '><td><i class="rp-dot ' + TYPES[k].color + '"></i>' + esc(TYPES[k].label) + '</td>' +
-          '<td class="n">' + cnt[k] + '</td><td class="n">' + fmtRs(st.byType[k]) + '</td><td>' + esc(TYPE_EFFECT[k]) + '</td></tr>';
+          '<td class="n">' + cnt[k] + '</td><td class="n">' + fmtMoney(st.byType[k]) + '</td><td>' + esc(TYPE_EFFECT[k]) + '</td></tr>';
       }).join('') +
-      '</tbody><tfoot><tr><td>Total</td><td class="n">' + st.count + '</td><td class="n">' + fmtRs(st.volume) + '</td><td></td></tr></tfoot></table></section>';
+      '</tbody><tfoot><tr><td>Total</td><td class="n">' + st.count + '</td><td class="n">' + fmtMoney(st.volume) + '</td><td></td></tr></tfoot></table></section>';
   }
 
   /* entries — oldest first, one amount column per cash effect */
@@ -2122,15 +2247,15 @@ function buildReportHTML(o, r) {
     var balTable = function (title, list, key, total) {
       if (!list.length) return '<div><h3>' + title + '</h3><p class="rp-empty">Nothing</p></div>';
       return '<div><h3>' + title + '</h3><table class="rp-table"><thead><tr><th>Name</th><th class="n">Amount</th></tr></thead><tbody>' +
-        list.map(function (p) { return '<tr><td>' + esc(p.party) + '</td><td class="n">' + fmtRs(p[key]) + '</td></tr>'; }).join('') +
-        '</tbody><tfoot><tr><td>Total</td><td class="n">' + fmtRs(total) + '</td></tr></tfoot></table></div>';
+        list.map(function (p) { return '<tr><td>' + esc(p.party) + '</td><td class="n">' + fmtMoney(p[key]) + '</td></tr>'; }).join('') +
+        '</tbody><tfoot><tr><td>Total</td><td class="n">' + fmtMoney(total) + '</td></tr></tfoot></table></div>';
     };
     html += '<section class="rp-sec rp-keep"><h2>Outstanding balances<small>as of ' + esc(fmtDay(r.last)) + ' · all entry types</small></h2>';
     if (!owe.length && !owed.length) {
       html += '<p class="rp-empty">' + (o.party ? esc(o.party) + ' is settled' : 'Everyone is settled') + ' — nothing owed either way.</p>';
     } else {
       html += '<div class="rp-bal">' + balTable('I owe · payables', owe, 'payable', totOwe) + balTable('Owed to me · receivables', owed, 'receivable', totOwed) + '</div>' +
-        '<p class="rp-net"><span>' + (net === 0 ? 'All square' : net > 0 ? 'Net, others owe you' : 'Net, you owe others') + '</span><b>' + fmtRs(Math.abs(net)) + '</b></p>';
+        '<p class="rp-net"><span>' + (net === 0 ? 'All square' : net > 0 ? 'Net, others owe you' : 'Net, you owe others') + '</span><b>' + fmtMoney(Math.abs(net)) + '</b></p>';
     }
     html += '</section>';
   }
@@ -2271,6 +2396,11 @@ function openEntryModal(id) {
   $('#f-when').value = e ? inputValueFromTs(e.ts) : inputNow();
   $('#f-party').value = e ? e.party : '';
   $('#f-note').value = e && e.note !== 'sample' ? e.note : '';
+  /* Amount field follows the account's currency (symbol + decimals). */
+  var amtCur = $('.amount-field .cur');
+  if (amtCur) amtCur.textContent = cur().symbol;
+  var amtInput = $('#f-amount');
+  if (amtInput) { amtInput.step = cur().dec ? 'any' : '1'; amtInput.placeholder = cur().dec ? '0.00' : '0'; }
   var seen = {}, opts = '';
   portalEntries().forEach(function (x) { if (x.party && !seen[x.party]) { seen[x.party] = 1; opts += '<option value="' + esc(x.party) + '">'; } });
   $('#party-list').innerHTML = opts;
@@ -2314,7 +2444,7 @@ function handleEntrySubmit(ev) {
     party: $('#f-party').value.trim(), note: $('#f-note').value.trim()
   };
   if (S.editingId) { updateEntry(S.editingId, data); toast('Entry updated.'); }
-  else { addEntry(data); toast('Saved — ' + fmtRs(data.amount) + '.'); }
+  else { addEntry(data); toast('Saved — ' + fmtMoney(data.amount) + '.'); }
   closeEntryModal();
   renderAll(false);
 }
@@ -2384,7 +2514,7 @@ document.addEventListener('DOMContentLoaded', function () {
   $('#entry-delete').addEventListener('click', function () {
     var e = S.editingId ? getEntry(S.editingId) : null;
     if (!e) return;
-    confirmDlg('Delete entry?', '"' + e.desc + '" — ' + fmtRs(e.amount) + ' · ' + fmtDateTime(e.ts), 'Delete', function () {
+    confirmDlg('Delete entry?', '"' + e.desc + '" — ' + fmtMoney(e.amount) + ' · ' + fmtDateTime(e.ts), 'Delete', function () {
       deleteEntry(e.id);
       closeEntryModal();
       renderAll(false);

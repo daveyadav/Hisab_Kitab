@@ -763,3 +763,17 @@ select.field{
 .rp-sign{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin-top:44px;break-inside:avoid}
 .rp-sign div{border-top:1px solid #111b18;padding-top:5px;font-size:8.5pt;color:#44534e}
 .rp-foot{margin-top:18px;padding-top:8px;border-top:1px solid #e3ddd1;font-size:7.5pt;color:#6b7772}
+
+/* ---- currency picker ---- */
+.cur-badge{font-weight:800;font-size:.92rem;color:var(--ink);letter-spacing:.01em;white-space:nowrap}
+#currency-search{margin:2px 0 10px}
+.currency-list{max-height:46vh;overflow-y:auto;margin:0 -4px;padding:0 4px;-webkit-overflow-scrolling:touch}
+.currency-row{display:flex;align-items:center;gap:13px;width:100%;padding:10px 6px;border:0;border-bottom:1px solid var(--line-2);background:none;font-family:inherit;cursor:pointer;text-align:left;color:var(--ink)}
+.currency-row:last-child{border-bottom:0}
+.currency-row .cur-badge{width:44px;height:44px;border-radius:13px;background:var(--surface-3);display:flex;align-items:center;justify-content:center;flex:none;font-size:1rem}
+.currency-row .cur-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.currency-row .cur-meta b{font-size:.95rem;font-weight:650}
+.currency-row .cur-meta span{font-size:.78rem;color:var(--muted)}
+.currency-row .cur-check{width:26px;height:26px;flex:none;display:flex;align-items:center;justify-content:center;color:var(--accent)}
+.currency-row .cur-check svg{width:20px;height:20px}
+.currency-row[aria-selected="true"] .cur-badge{background:var(--accent-soft);color:var(--accent)}

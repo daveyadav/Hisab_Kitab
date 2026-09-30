@@ -1105,7 +1105,7 @@ function drivePayloadFor(email, descs) {
     /* Log in a fake user so renders run. */
     c.sandbox.S.user = { kind: 'local', id: 't' };
     c.sandbox.S.entries = { personal: [], business: [] };
-    ['#confirm-modal', '#entry-modal', '#report-modal', '#account-modal']
+    ['#confirm-modal', '#currency-modal', '#entry-modal', '#report-modal', '#account-modal']
       .forEach(sel => { c.$(sel).hidden = true; });
     const pressBack = () => {
       hist.entries.pop(); /* browser moves one entry back */
@@ -1145,7 +1145,7 @@ function drivePayloadFor(email, descs) {
     c.sandbox.S.user = { kind: 'local', id: 't' };
     c.sandbox.S.entries = { personal: [], business: [] };
     c.sandbox.goTab('entries');
-    ['#confirm-modal', '#entry-modal', '#report-modal', '#account-modal']
+    ['#confirm-modal', '#currency-modal', '#entry-modal', '#report-modal', '#account-modal']
       .forEach(sel => { c.$(sel).hidden = true; });
     c.sandbox.openModal('#entry-modal');
     check('B14f sheet opened', c.$('#entry-modal').hidden === false);
@@ -1199,6 +1199,49 @@ function drivePayloadFor(email, descs) {
     await tick(20);
     check('B15d offline → no sync attempt (waits)', calls.length === 0, calls.join(','));
     c.windowStub.navigator.onLine = true;
+  }
+
+  // B16: currency — per-account currency, formatting, picker, sync.
+  {
+    const c = makeContext();
+    c.sandbox.S.user = { kind: 'local', id: 't' };
+    c.sandbox.S.profile = { nickname: '', dismissedNudge: false, currency: 'NPR' };
+    c.sandbox.S.entries = { personal: [], business: [] };
+
+    check('B16a default currency is NPR', c.sandbox.cur().code === 'NPR', c.sandbox.cur().code);
+    check('B16b NPR formats lakh-style', c.sandbox.fmtMoney(125000) === 'Rs 1,25,000', c.sandbox.fmtMoney(125000));
+    check('B16c NPR negative', c.sandbox.fmtMoney(-1000) === '−Rs 1,000', c.sandbox.fmtMoney(-1000));
+    check('B16d unknown code falls back to NPR', c.sandbox.validCurrency('XXX') === 'NPR', c.sandbox.validCurrency('XXX'));
+
+    check('B16e setCurrency switches', c.sandbox.setCurrency('USD') === true && c.sandbox.cur().code === 'USD');
+    check('B16f USD formats with decimals', c.sandbox.fmtMoney(1250) === '$1,250.00', c.sandbox.fmtMoney(1250));
+    check('B16g setCurrency same code is a no-op', c.sandbox.setCurrency('USD') === false);
+    c.sandbox.setCurrency('XXX');
+    check('B16h junk code resets to NPR', c.sandbox.cur().code === 'NPR', c.sandbox.cur().code);
+
+    c.sandbox.setCurrency('EUR');
+    const reloaded = c.sandbox.loadProfileFor(c.sandbox.accountStoreKey());
+    check('B16i profile persists currency', reloaded.currency === 'EUR', reloaded.currency);
+    const payload = c.sandbox.drivePayload();
+    check('B16j drive payload includes currency', payload.profile.currency === 'EUR', JSON.stringify(payload.profile));
+
+    c.sandbox.applyRemoteCurrency({ profile: { currency: 'JPY' } });
+    check('B16k remote currency applies', c.sandbox.cur().code === 'JPY', c.sandbox.cur().code);
+    check('B16l JPY formats whole yen', c.sandbox.fmtMoney(1250) === '¥1,250', c.sandbox.fmtMoney(1250));
+
+    c.sandbox.setCurrency('NPR');
+    c.sandbox.renderCurrencyList('');
+    const listHTML = c.$('#currency-list').innerHTML;
+    check('B16m picker lists every currency',
+      (listHTML.match(/currency-row/g) || []).length === c.sandbox.CURRENCIES.length,
+      String((listHTML.match(/currency-row/g) || []).length));
+    check('B16n picker marks the current one',
+      /aria-selected="true"[^>]*data-code="NPR"/.test(listHTML), listHTML.slice(0, 160));
+    c.sandbox.renderCurrencyList('dollar');
+    const fHTML = c.$('#currency-list').innerHTML;
+    check('B16o picker search filters', /USD/.test(fHTML) && !/NPR/.test(fHTML), fHTML.slice(0, 120));
+    c.sandbox.renderCurrencyList('zzz-no-match');
+    check('B16p picker empty state', /No currency matches/.test(c.$('#currency-list').innerHTML));
   }
 
   // B10d: the account modal shows an honest offline-readiness line

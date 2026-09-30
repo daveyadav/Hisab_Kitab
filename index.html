@@ -50,6 +50,9 @@ try { var t = localStorage.getItem('hisab_theme'); if (t === 'light' || t === 'd
         <label>Confirm password
           <input id="create-password2" type="password" required minlength="4" maxlength="64" placeholder="Repeat the password" autocomplete="new-password">
         </label>
+        <label>Currency
+          <select id="create-currency" class="field"></select>
+        </label>
         <button class="btn primary block" type="submit">Create account</button>
         <p id="create-error" class="error" hidden></p>
       </form>
@@ -204,6 +207,18 @@ try { var t = localStorage.getItem('hisab_theme'); if (t === 'light' || t === 'd
         <span class="spacer"></span>
         <button type="button" class="btn danger-ghost" id="account-logout">Log out</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Currency picker -->
+  <div id="currency-modal" class="modal" hidden>
+    <div class="sheet card narrow" role="dialog" aria-modal="true" aria-labelledby="currency-title">
+      <div class="sheet-head">
+        <h2 id="currency-title">Choose currency</h2>
+        <button class="icon-btn" id="currency-close" aria-label="Close" type="button"></button>
+      </div>
+      <input id="currency-search" class="field" type="search" placeholder="Search name or code…" autocomplete="off" aria-label="Search currencies">
+      <div id="currency-list" class="currency-list" role="listbox" aria-label="Currencies"></div>
     </div>
   </div>
 
