@@ -21,7 +21,7 @@ function mockResponse(url, ok, body) {
   return { url: url, ok: ok, body: body, clone: function () { return mockResponse(url, ok, body); } };
 }
 
-function MockCache() { this.map = new Map(); }
+function MockCache() { this.map = new Map(); this.added = []; }
 MockCache.prototype._key = function (req) {
   return typeof req === 'string' ? new URL(req, SCOPE).href : req.url;
 };
@@ -29,7 +29,8 @@ MockCache.prototype.addAll = async function (list) {
   for (const p of list) { await this.add(p); }
 };
 MockCache.prototype.add = async function (p) {
-  const url = new URL(p, SCOPE).href;
+  const url = typeof p === 'string' ? new URL(p, SCOPE).href : p.url;
+  this.added.push(p);
   this.map.set(url, mockResponse(url, true, 'cached:' + url));
 };
 MockCache.prototype.match = async function (req) { return this.map.get(this._key(req)) || null; };
@@ -69,6 +70,10 @@ async function fetchMock(req) {
 }
 
 const sandbox = { self: selfMock, caches: cachesMock, fetch: fetchMock, URL: URL,
+  Request: function (url, init) {
+    this.url = new URL(url, SCOPE).href;
+    this.cache = (init && init.cache) || 'default';
+  },
   setTimeout: setTimeout, clearTimeout: clearTimeout };
 vm.createContext(sandbox);
 const SW_SRC = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
@@ -95,6 +100,9 @@ function fire(type, event) {
   check('install caches js/app.js', !!cache.map.get(SCOPE + 'js/app.js'));
   check('install caches manifest + icons',
     !!cache.map.get(SCOPE + 'manifest.webmanifest') && !!cache.map.get(SCOPE + 'assets/icon-192.png'));
+  check('install bypasses the HTTP cache (no mixed-version shell)',
+    cache.added.length > 0 && cache.added.every(function (r) { return r && r.cache === 'reload'; }),
+    JSON.stringify(cache.added.slice(0, 3).map(function (r) { return r && r.cache; })));
 
   // install survives a single NON-CRITICAL failing asset (one 404 can't kill offline)
   {
@@ -102,7 +110,8 @@ function fire(type, event) {
     const cache = await cachesMock.open(CACHE_NAME);
     const origAdd = cache.add.bind(cache);
     cache.add = async function (p) {
-      if (String(p).indexOf('logo-maskable') >= 0) throw new Error('404');
+      const u = typeof p === 'string' ? p : p.url;
+      if (u.indexOf('logo-maskable') >= 0) throw new Error('404');
       return origAdd(p);
     };
     let resolved = false;
@@ -119,7 +128,8 @@ function fire(type, event) {
     const cache = await cachesMock.open(CACHE_NAME);
     const origAdd = cache.add.bind(cache);
     cache.add = async function (p) {
-      if (String(p) === 'js/app.js') throw new Error('404');
+      const u = typeof p === 'string' ? p : p.url;
+      if (u === 'js/app.js' || u === SCOPE + 'js/app.js') throw new Error('404');
       return origAdd(p);
     };
     let rejected = false;

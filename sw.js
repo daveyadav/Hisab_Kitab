@@ -12,7 +12,7 @@
  * ========================================================================= */
 'use strict';
 
-var CACHE = 'hisab-shell-v25';
+var CACHE = 'hisab-shell-v26';
 
 /* Files the app cannot boot without. The install FAILS unless every one of
  * these lands in the cache — a worker that "installed" with an empty cache
@@ -38,7 +38,11 @@ function withTimeout(promise, ms) {
 
 function cacheAll(cache, assets, failLoud) {
   return Promise.all(assets.map(function (a) {
-    return withTimeout(cache.add(a), INSTALL_TIMEOUT_MS).then(
+    /* Bypass the HTTP cache on (re)install: without this, a stale copy of
+     * an asset (e.g. the previous version's styles.css, HTTP-cached for
+     * 10 min) can get baked into the NEW version's cache — a mixed-version
+     * shell where new JS meets old CSS. */
+    return withTimeout(cache.add(new Request(a, { cache: 'reload' })), INSTALL_TIMEOUT_MS).then(
       function () { return a; },
       function () { return null; }
     );
