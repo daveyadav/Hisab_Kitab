@@ -151,9 +151,13 @@ try { var t = localStorage.getItem('hisab_theme'); if (t === 'light' || t === 'd
         <label>Description
           <input id="f-desc" type="text" required maxlength="80" placeholder="e.g. Rice, lentils, oil">
         </label>
+        <label id="f-category-wrap">Category
+          <select id="f-category" class="field"></select>
+          <input id="f-category-new" type="text" maxlength="30" placeholder="New category name" hidden style="margin-top:8px">
+        </label>
         <label><span id="f-party-label">Shop / vendor</span>
-          <input id="f-party" type="text" maxlength="60" placeholder="Name (optional)" list="party-list">
-          <datalist id="party-list"></datalist>
+          <select id="f-party" class="field"></select>
+          <input id="f-party-new" type="text" maxlength="60" placeholder="New vendor name" hidden style="margin-top:8px">
         </label>
         <label>Note <span class="muted">(optional)</span>
           <input id="f-note" type="text" maxlength="120" placeholder="Anything to remember">
@@ -219,6 +223,17 @@ try { var t = localStorage.getItem('hisab_theme'); if (t === 'light' || t === 'd
       </div>
       <input id="currency-search" class="field" type="search" placeholder="Search name or code…" autocomplete="off" aria-label="Search currencies">
       <div id="currency-list" class="currency-list" role="listbox" aria-label="Currencies"></div>
+    </div>
+  </div>
+
+  <!-- Vendor statement -->
+  <div id="vendor-modal" class="modal" hidden>
+    <div class="sheet card" role="dialog" aria-modal="true" aria-labelledby="vendor-title">
+      <div class="sheet-head">
+        <h2 id="vendor-title">Vendor</h2>
+        <button class="icon-btn" id="vendor-close" aria-label="Close" type="button"></button>
+      </div>
+      <div id="vendor-body"></div>
     </div>
   </div>
 

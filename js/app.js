@@ -369,6 +369,76 @@ function populateCurrencySelect() {
       esc(c.symbol + ' — ' + c.name + ' (' + c.code + ')') + '</option>';
   }).join('');
 }
+
+/* ---------------- categories & vendors ----------------
+ * Categories: what the money was for (kirana, meds…). Vendors: who the
+ * money moved with. Both live in the profile (per account, syncs with the
+ * khata); users add their own from the entry form. */
+var CATEGORIES = ['Kirana', 'Medicine', 'Transport', 'Food & Drinks', 'Utilities',
+  'Rent', 'Clothes', 'Education', 'Mobile Recharge', 'Fuel', 'Health', 'Entertainment'];
+function cleanStrArray(a, max) {
+  var out = [], seen = {};
+  (Array.isArray(a) ? a : []).forEach(function (x) {
+    x = String(x || '').trim().slice(0, max);
+    if (x && !seen[x.toLowerCase()]) { seen[x.toLowerCase()] = 1; out.push(x); }
+  });
+  return out;
+}
+function getCategories() {
+  var seen = {}, out = [];
+  CATEGORIES.concat((S.profile && S.profile.categories) || []).forEach(function (c) {
+    c = String(c || '').trim();
+    if (c && !seen[c.toLowerCase()]) { seen[c.toLowerCase()] = 1; out.push(c); }
+  });
+  return out;
+}
+function addCategory(name) {
+  name = String(name || '').trim().slice(0, 30);
+  if (!name || !S.profile) return false;
+  var customs = S.profile.categories || (S.profile.categories = []);
+  var exists = customs.some(function (c) { return String(c).toLowerCase() === name.toLowerCase(); }) ||
+    CATEGORIES.some(function (c) { return c.toLowerCase() === name.toLowerCase(); });
+  if (exists) return false;
+  customs.push(name);
+  saveProfile();
+  return true;
+}
+/* Vendors: the managed list plus every party name already used in entries
+ * (both portals), so old free-text names stay selectable. */
+function getVendors() {
+  var seen = {}, out = [];
+  function push(n) {
+    n = String(n || '').trim();
+    if (n && !seen[n.toLowerCase()]) { seen[n.toLowerCase()] = 1; out.push(n); }
+  }
+  ((S.profile && S.profile.vendors) || []).forEach(push);
+  ['personal', 'business'].forEach(function (portal) {
+    (S.entries[portal] || []).forEach(function (e) { push(e.party); });
+  });
+  out.sort(function (a, b) { return a.toLowerCase() < b.toLowerCase() ? -1 : (a.toLowerCase() > b.toLowerCase() ? 1 : 0); });
+  return out;
+}
+function addVendor(name) {
+  name = String(name || '').trim().slice(0, 60);
+  if (!name || !S.profile) return false;
+  if (canonicalVendor(name)) return false; /* already known (any casing) */
+  (S.profile.vendors || (S.profile.vendors = [])).push(name);
+  saveProfile();
+  return true;
+}
+/* The known spelling of a vendor, case-insensitively — keeps balances
+ * grouped under one name ("keep names consistent … for clean totals"). */
+function canonicalVendor(name) {
+  var l = String(name || '').trim().toLowerCase(), found = null;
+  if (!l) return null;
+  getVendors().forEach(function (v) { if (!found && String(v).toLowerCase() === l) found = v; });
+  return found;
+}
+/* Debt-type entries must name who the money is with — otherwise the
+ * Balances tab can't track what's pending. */
+var PARTY_REQUIRED = { due_purchase: 1, money_given: 1, money_taken: 1, paid_back: 1, received_back: 1 };
+/* Category applies to purchases and income — "what was this for". */
+var CATEGORY_TYPES = { cash_purchase: 1, due_purchase: 1, income: 1 };
 function fmtNum(n) { return Math.round(Number(n) || 0).toLocaleString('en-IN'); }
 /* Compact, lakh-aware: 950 · 12.5K · 3.2L · 1.1Cr */
 function fmtCompact(n) {
@@ -406,7 +476,7 @@ function avatarHTML(name, picture, cls) {
 /* ---------------- app state ---------------- */
 var S = {
   user: null,            // { kind:'local'|'google', id, displayName, picture }
-  profile: { nickname: '', dismissedNudge: false, currency: 'NPR' },
+  profile: { nickname: '', dismissedNudge: false, currency: 'NPR', vendors: [], categories: [] },
   portal: 'personal',    // 'personal' | 'business'
   tab: 'dashboard',
   period: '30d',         // dashboard period
@@ -487,7 +557,7 @@ function reauthAndSync() {
 function drivePayload() {
   return {
     app: 'hisab', version: 4, updatedAt: Date.now(),
-    profile: { nickname: (S.profile && S.profile.nickname) || '', currency: (S.profile && S.profile.currency) || 'NPR' },
+    profile: { nickname: (S.profile && S.profile.nickname) || '', currency: (S.profile && S.profile.currency) || 'NPR', vendors: (S.profile && S.profile.vendors) || [], categories: (S.profile && S.profile.categories) || [] },
     entries: S.entries
   };
 }
@@ -497,7 +567,13 @@ function validEntriesShape(e) {
 function cleanNickname(v) { return String(v || '').replace(/\s+/g, ' ').trim().slice(0, 30); }
 function loadProfileFor(storeKey) {
   var p = loadJSON(profileKeyFor(storeKey), null) || {};
-  return { nickname: cleanNickname(p.nickname), dismissedNudge: !!p.dismissedNudge, currency: validCurrency(p.currency) };
+  return {
+    nickname: cleanNickname(p.nickname),
+    dismissedNudge: !!p.dismissedNudge,
+    currency: validCurrency(p.currency),
+    vendors: cleanStrArray(p.vendors, 60),
+    categories: cleanStrArray(p.categories, 30)
+  };
 }
 function saveProfile() {
   saveJSON(profileKey(), S.profile);
@@ -591,6 +667,8 @@ function boot() {
   $('#report-close').innerHTML = icon('x');
   $('#currency-close').innerHTML = icon('x');
   $('#currency-close').addEventListener('click', function () { closeModal('#currency-modal'); });
+  $('#vendor-close').innerHTML = icon('x');
+  $('#vendor-close').addEventListener('click', function () { closeModal('#vendor-modal'); });
   $('#currency-search').addEventListener('input', function (ev) { renderCurrencyList(ev.target.value); });
   populateCurrencySelect();
   var navIcons = { dashboard: 'chart', entries: 'list', balances: 'swap', more: 'dots' };
@@ -695,7 +773,7 @@ function logout() {
   if (S.user && S.user.kind === 'google' && typeof Drive !== 'undefined') Drive.signOut();
   try { localStorage.removeItem(LS_SESSION); } catch (e) {}
   S.user = null;
-  S.profile = { nickname: '', dismissedNudge: false, currency: 'NPR' };
+  S.profile = { nickname: '', dismissedNudge: false, currency: 'NPR', vendors: [], categories: [] };
   clearPrintedReport();
   $('#login-username').value = '';
   $('#login-password').value = '';
@@ -925,6 +1003,24 @@ function applyRemoteCurrency(remote) {
     if (S.profile) S.profile.currency = code; /* re-render in the new currency */
   }
 }
+function applyRemoteVendors(remote) {
+  if (remote && remote.profile && Array.isArray(remote.profile.vendors)) {
+    var vendors = cleanStrArray(remote.profile.vendors, 60);
+    var local = loadProfileFor(accountStoreKey());
+    local.vendors = vendors;
+    saveJSON(profileKey(), local);
+    if (S.profile) S.profile.vendors = vendors;
+  }
+}
+function applyRemoteCategories(remote) {
+  if (remote && remote.profile && Array.isArray(remote.profile.categories)) {
+    var categories = cleanStrArray(remote.profile.categories, 30);
+    var local = loadProfileFor(accountStoreKey());
+    local.categories = categories;
+    saveJSON(profileKey(), local);
+    if (S.profile) S.profile.categories = categories;
+  }
+}
 function applyRemoteEntries(remote) {
   if (!remote || !validEntriesShape(remote.entries)) return false;
   S.entries = remote.entries;
@@ -933,6 +1029,8 @@ function applyRemoteEntries(remote) {
   saveJSON(dataKey(), S.entries);
   applyRemoteNickname(remote);
   applyRemoteCurrency(remote);
+  applyRemoteVendors(remote);
+  applyRemoteCategories(remote);
   renderAll(false);
   return true;
 }
@@ -1075,12 +1173,18 @@ function updateSyncPill(s) {
 }
 
 /* ---------------- entries ---------------- */
+/* Amounts are stored rounded to the currency's decimals (Rs → whole). */
+function roundAmount(n) {
+  var v = Math.abs(Number(n) || 0), d = cur().dec, k = Math.pow(10, d);
+  return Math.round(v * k) / k;
+}
 function addEntry(data) {
   var list = portalEntries();
   list.push({
     id: uid(), ts: data.ts, type: data.type,
-    desc: data.desc, amount: Math.round(Math.abs(Number(data.amount) || 0)),
-    party: (data.party || '').trim(), note: (data.note || '').trim()
+    desc: data.desc, amount: roundAmount(data.amount),
+    party: (data.party || '').trim(), note: (data.note || '').trim(),
+    category: (data.category || '').trim().slice(0, 30)
   });
   setPortalEntries(list);
 }
@@ -1089,8 +1193,9 @@ function updateEntry(id, data) {
   for (var i = 0; i < list.length; i++) {
     if (list[i].id === id) {
       list[i].ts = data.ts; list[i].type = data.type;
-      list[i].desc = data.desc; list[i].amount = Math.round(Math.abs(Number(data.amount) || 0));
+      list[i].desc = data.desc; list[i].amount = roundAmount(data.amount);
       list[i].party = (data.party || '').trim(); list[i].note = (data.note || '').trim();
+      list[i].category = (data.category || '').trim().slice(0, 30);
       break;
     }
   }
@@ -1531,7 +1636,7 @@ function goTab(t) {
 }
 /* Close the topmost open layer. Returns true when one was open. */
 function closeTopmostLayer() {
-  var sels = ['#confirm-modal', '#currency-modal', '#entry-modal', '#report-modal', '#account-modal'];
+  var sels = ['#confirm-modal', '#currency-modal', '#vendor-modal', '#entry-modal', '#report-modal', '#account-modal'];
   for (var i = 0; i < sels.length; i++) {
     var m = $(sels[i]);
     if (m && !m.hidden) {
@@ -1592,7 +1697,8 @@ function entryRow(e, showDate) {
    * show the full date + time so nothing is hidden. */
   var dt = showDate ? fmtDateTime(e.ts) : fmtTime(e.ts);
   var sub = '<span class="e-dt">' + esc(dt) + '</span>' +
-    (e.party ? ' · ' + esc(e.party) : '') + ' · ' + esc(t.short);
+    (e.party ? ' · ' + esc(e.party) : '') + ' · ' + esc(t.short) +
+    (e.category ? ' · ' + esc(e.category) : '');
   return '<button class="entry-row" data-id="' + e.id + '">' +
     '<span class="e-ico t-' + e.type + '">' + icon(t.icon) + '</span>' +
     '<span class="e-main"><span class="e-desc">' + esc(e.desc) + '</span>' +
@@ -1888,11 +1994,66 @@ function renderBalances() {
   var bp = $('#balances-print');
   if (bp && list.length) bp.addEventListener('click', function () { openReportModal({ period: 'all' }); });
   $all('#tab-balances .party-card').forEach(function (c) {
-    c.addEventListener('click', function () {
-      S.filterQ = c.dataset.party; S.filterType = 'all'; goTab('entries');
-    });
+    c.addEventListener('click', function () { openVendorSheet(c.dataset.party); });
   });
   countUp(root);
+}
+
+/* ---- vendor statement ----
+ * Tap a party card in Balances → a sheet with what's pending with this
+ * vendor, the give/get breakdown, and every entry with them. */
+function openVendorSheet(party) {
+  var list = portalEntries().filter(function (e) { return e.party === party; })
+    .sort(function (a, b) { return b.ts - a.ts; });
+  var t = { due: 0, paid: 0, gave: 0, got: 0 };
+  list.forEach(function (e) {
+    var f = TYPES[e.type] ? TYPES[e.type].flow : 'cash';
+    if (f === 'payable+') t.due += e.amount;
+    else if (f === 'payable-') t.paid += e.amount;
+    else if (f === 'receivable+') t.gave += e.amount;
+    else if (f === 'receivable-') t.got += e.amount;
+  });
+  var payable = t.due - t.paid, receivable = t.gave - t.got;
+  $('#vendor-title').textContent = party;
+
+  var banner;
+  if (payable > 0 || receivable > 0) {
+    banner = '<div class="v-status">' +
+      (payable > 0 ? '<div><span>You owe</span><b class="neg">' + fmtMoney(payable) + '</b></div>' : '') +
+      (receivable > 0 ? '<div><span>Owes you</span><b class="pos">' + fmtMoney(receivable) + '</b></div>' : '') +
+      '</div>';
+  } else {
+    var note;
+    if (t.due > 0 && t.paid >= t.due) note = 'You\u2019ve paid them back in full ✓';
+    else if (t.gave > 0 && t.got >= t.gave) note = 'They\u2019ve paid you back in full ✓';
+    else note = 'No pending amount.';
+    banner = '<div class="v-status settled"><b>All settled ✓</b><span>' + esc(note) + '</span></div>';
+  }
+  function vrow(k, v) {
+    return '<div class="v-row"><span>' + k + '</span><b>' + fmtMoney(v) + '</b></div>';
+  }
+  var rows = '';
+  if (t.due) rows += vrow('Bought on due', t.due);
+  if (t.paid) rows += vrow('Paid back', t.paid);
+  if (t.gave) rows += vrow('Gave', t.gave);
+  if (t.got) rows += vrow('Got back', t.got);
+
+  $('#vendor-body').innerHTML =
+    '<div class="v-head">' + avatarHTML(party, null, 'lg') + banner + '</div>' +
+    (rows ? '<div class="card v-rows">' + rows + '</div>' : '') +
+    '<div class="section-title">History · ' + list.length + ' entr' + (list.length === 1 ? 'y' : 'ies') + '</div>' +
+    (list.length ? '<div class="list-card">' + list.map(function (e) { return entryRow(e, true); }).join('') + '</div>'
+                 : '<div class="card empty"><p class="muted">No entries yet.</p></div>') +
+    '<button class="btn ghost block" id="vendor-see-entries" type="button" style="margin-top:14px">View in Entries</button>';
+
+  $all('#vendor-body .entry-row').forEach(function (r) {
+    r.addEventListener('click', function () { closeModal('#vendor-modal'); openEntryModal(r.dataset.id); });
+  });
+  $('#vendor-see-entries').addEventListener('click', function () {
+    closeModal('#vendor-modal');
+    S.filterQ = party; S.filterType = 'all'; goTab('entries');
+  });
+  openModal('#vendor-modal');
 }
 
 /* ---- more tab ---- */
@@ -2394,19 +2555,19 @@ function openEntryModal(id) {
   $('#f-desc').value = e ? e.desc : '';
   $('#f-amount').value = e ? e.amount : '';
   $('#f-when').value = e ? inputValueFromTs(e.ts) : inputNow();
-  $('#f-party').value = e ? e.party : '';
   $('#f-note').value = e && e.note !== 'sample' ? e.note : '';
+  var pni = $('#f-party-new'); if (pni) { pni.value = ''; }
+  rebuildPartyOptions(e ? e.party : '');
+  var cni = $('#f-category-new'); if (cni) { cni.value = ''; }
+  rebuildCategoryOptions(e ? (e.category || '') : '');
   /* Amount field follows the account's currency (symbol + decimals). */
   var amtCur = $('.amount-field .cur');
   if (amtCur) amtCur.textContent = cur().symbol;
   var amtInput = $('#f-amount');
   if (amtInput) { amtInput.step = cur().dec ? 'any' : '1'; amtInput.placeholder = cur().dec ? '0.00' : '0'; }
-  var seen = {}, opts = '';
-  portalEntries().forEach(function (x) { if (x.party && !seen[x.party]) { seen[x.party] = 1; opts += '<option value="' + esc(x.party) + '">'; } });
-  $('#party-list').innerHTML = opts;
   updatePartyLabel();
   openModal('#entry-modal');
-  setTimeout(function () { var a = $('#f-amount'); if (a && a.focus) a.focus(); }, 280);
+  /* No auto-focus: the keyboard appears only when the user taps a field. */
 }
 /* datetime-local value from an epoch ts (Kathmandu wall clock) */
 function inputValueFromTs(ts) {
@@ -2429,6 +2590,36 @@ function renderTypeGrid() {
 }
 function updatePartyLabel() {
   $('#f-party-label').textContent = TYPES[S.entryType].partyLabel;
+  /* Vendor is mandatory for debt entries (due / gave / took / paid back /
+   * got back) so pending amounts stay trackable; optional otherwise. */
+  var sel = $('#f-party');
+  rebuildPartyOptions(sel ? sel.value : '');
+  var wrap = $('#f-category-wrap');
+  if (wrap) wrap.hidden = !CATEGORY_TYPES[S.entryType];
+}
+function rebuildPartyOptions(selected) {
+  var sel = $('#f-party');
+  if (!sel) return;
+  var html = PARTY_REQUIRED[S.entryType] ? '' : '<option value="">— None —</option>';
+  getVendors().forEach(function (v) {
+    html += '<option value="' + esc(v) + '"' + (v === selected ? ' selected' : '') + '>' + esc(v) + '</option>';
+  });
+  html += '<option value="__new"' + (selected === '__new' ? ' selected' : '') + '>＋ Add new vendor…</option>';
+  sel.innerHTML = html;
+  var ni = $('#f-party-new');
+  if (ni) ni.hidden = sel.value !== '__new';
+}
+function rebuildCategoryOptions(selected) {
+  var sel = $('#f-category');
+  if (!sel) return;
+  var html = '<option value="">— No category —</option>';
+  getCategories().forEach(function (c) {
+    html += '<option value="' + esc(c) + '"' + (c === selected ? ' selected' : '') + '>' + esc(c) + '</option>';
+  });
+  html += '<option value="__new"' + (selected === '__new' ? ' selected' : '') + '>＋ Add new…</option>';
+  sel.innerHTML = html;
+  var ni = $('#f-category-new');
+  if (ni) ni.hidden = sel.value !== '__new';
 }
 function closeEntryModal() { closeModal('#entry-modal'); S.editingId = null; }
 
@@ -2438,10 +2629,31 @@ function handleEntrySubmit(ev) {
   var amount = Number($('#f-amount').value);
   if (!(amount > 0)) { toast('Enter an amount greater than 0.'); return; }
   if (!desc) { toast('Add a short description.'); return; }
+  var partySel = $('#f-party'), party = partySel ? partySel.value : '';
+  if (party === '__new') {
+    var pni = $('#f-party-new');
+    party = pni ? pni.value.trim() : '';
+    if (party) {
+      var canon = canonicalVendor(party);
+      if (canon) party = canon; /* reuse the known spelling */
+      else addVendor(party);
+    }
+  }
+  if (PARTY_REQUIRED[S.entryType] && !party) { toast('Choose a vendor for this entry.'); return; }
+  var category = '';
+  if (CATEGORY_TYPES[S.entryType]) {
+    var catSel = $('#f-category');
+    category = catSel ? catSel.value : '';
+    if (category === '__new') {
+      var cni = $('#f-category-new');
+      category = cni ? cni.value.trim() : '';
+      if (category) addCategory(category); else category = '';
+    }
+  }
   var data = {
     ts: tsFromInput($('#f-when').value),
     type: S.entryType, desc: desc, amount: amount,
-    party: $('#f-party').value.trim(), note: $('#f-note').value.trim()
+    party: party, note: $('#f-note').value.trim(), category: category
   };
   if (S.editingId) { updateEntry(S.editingId, data); toast('Entry updated.'); }
   else { addEntry(data); toast('Saved — ' + fmtMoney(data.amount) + '.'); }
@@ -2509,6 +2721,14 @@ document.addEventListener('DOMContentLoaded', function () {
   if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('afterprint', restoreTitleAfterPrint);
 
   $('#entry-form').addEventListener('submit', handleEntrySubmit);
+  $('#f-party').addEventListener('change', function () {
+    var ni = $('#f-party-new'), isNew = this.value === '__new';
+    if (ni) { ni.hidden = !isNew; if (isNew && ni.focus) ni.focus(); }
+  });
+  $('#f-category').addEventListener('change', function () {
+    var ni = $('#f-category-new'), isNew = this.value === '__new';
+    if (ni) { ni.hidden = !isNew; if (isNew && ni.focus) ni.focus(); }
+  });
   $('#entry-close').addEventListener('click', closeEntryModal);
   $('#entry-cancel').addEventListener('click', closeEntryModal);
   $('#entry-delete').addEventListener('click', function () {

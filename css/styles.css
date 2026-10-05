@@ -777,3 +777,18 @@ select.field{
 .currency-row .cur-check{width:26px;height:26px;flex:none;display:flex;align-items:center;justify-content:center;color:var(--accent)}
 .currency-row .cur-check svg{width:20px;height:20px}
 .currency-row[aria-selected="true"] .cur-badge{background:var(--accent-soft);color:var(--accent)}
+
+/* ---- vendor statement ---- */
+.v-head{display:flex;gap:14px;align-items:center;margin-bottom:12px}
+.v-status{flex:1;display:flex;gap:20px;background:var(--surface-3);border-radius:14px;padding:12px 14px}
+.v-status>div{display:flex;flex-direction:column;gap:2px}
+.v-status span{font-size:.78rem;color:var(--muted)}
+.v-status b{font-size:1.15rem}
+.v-status b.neg{color:var(--neg)} .v-status b.pos{color:var(--pos)}
+.v-status.settled{flex-direction:column;gap:4px}
+.v-status.settled b{color:var(--pos);font-size:1.02rem}
+.v-status.settled span{font-size:.85rem}
+.v-rows{padding:2px 14px;margin-bottom:6px}
+.v-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line-2);font-size:.92rem}
+.v-row:last-child{border-bottom:0}
+.v-row span{color:var(--muted)}

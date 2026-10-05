@@ -1105,7 +1105,7 @@ function drivePayloadFor(email, descs) {
     /* Log in a fake user so renders run. */
     c.sandbox.S.user = { kind: 'local', id: 't' };
     c.sandbox.S.entries = { personal: [], business: [] };
-    ['#confirm-modal', '#currency-modal', '#entry-modal', '#report-modal', '#account-modal']
+    ['#confirm-modal', '#currency-modal', '#vendor-modal', '#entry-modal', '#report-modal', '#account-modal']
       .forEach(sel => { c.$(sel).hidden = true; });
     const pressBack = () => {
       hist.entries.pop(); /* browser moves one entry back */
@@ -1145,7 +1145,7 @@ function drivePayloadFor(email, descs) {
     c.sandbox.S.user = { kind: 'local', id: 't' };
     c.sandbox.S.entries = { personal: [], business: [] };
     c.sandbox.goTab('entries');
-    ['#confirm-modal', '#currency-modal', '#entry-modal', '#report-modal', '#account-modal']
+    ['#confirm-modal', '#currency-modal', '#vendor-modal', '#entry-modal', '#report-modal', '#account-modal']
       .forEach(sel => { c.$(sel).hidden = true; });
     c.sandbox.openModal('#entry-modal');
     check('B14f sheet opened', c.$('#entry-modal').hidden === false);
@@ -1242,6 +1242,92 @@ function drivePayloadFor(email, descs) {
     check('B16o picker search filters', /USD/.test(fHTML) && !/NPR/.test(fHTML), fHTML.slice(0, 120));
     c.sandbox.renderCurrencyList('zzz-no-match');
     check('B16p picker empty state', /No currency matches/.test(c.$('#currency-list').innerHTML));
+  }
+
+  // B17: categories, vendors, vendor sheet, decimal rounding.
+  {
+    const c = makeContext();
+    c.sandbox.S.user = { kind: 'local', id: 't' };
+    c.sandbox.S.profile = { nickname: '', dismissedNudge: false, currency: 'NPR', vendors: [], categories: [] };
+    c.sandbox.S.entries = { personal: [], business: [] };
+    const now = Date.now();
+
+    check('B17a preset categories present',
+      c.sandbox.getCategories().indexOf('Kirana') >= 0 && c.sandbox.getCategories().indexOf('Medicine') >= 0);
+    check('B17b addCategory stores custom',
+      c.sandbox.addCategory('Petrol') === true && c.sandbox.getCategories().indexOf('Petrol') >= 0);
+    check('B17c addCategory dedupes case-insensitively', c.sandbox.addCategory('kirana') === false);
+
+    c.sandbox.addEntry({ ts: now, type: 'due_purchase', desc: 'Rice', amount: 2000, party: 'Bhatbhateni', note: '', category: 'Kirana' });
+    check('B17d entry stores category', c.sandbox.S.entries.personal[0].category === 'Kirana');
+    check('B17e entryRow shows category', c.sandbox.entryRow(c.sandbox.S.entries.personal[0]).indexOf('Kirana') >= 0);
+    check('B17f getVendors picks up entry parties', c.sandbox.getVendors().indexOf('Bhatbhateni') >= 0);
+    check('B17g addVendor dedupes case-insensitively', c.sandbox.addVendor('bhatbhateni') === false);
+    c.sandbox.addVendor('Kalimati');
+    check('B17h getVendors sorted union',
+      JSON.stringify(c.sandbox.getVendors()) === JSON.stringify(['Bhatbhateni', 'Kalimati']),
+      JSON.stringify(c.sandbox.getVendors()));
+
+    const reloaded = c.sandbox.loadProfileFor(c.sandbox.accountStoreKey());
+    check('B17i profile persists vendors+categories',
+      reloaded.vendors.indexOf('Kalimati') >= 0 && reloaded.categories.indexOf('Petrol') >= 0,
+      JSON.stringify({ v: reloaded.vendors, c: reloaded.categories }));
+    const payload = c.sandbox.drivePayload();
+    check('B17j drive payload carries vendors+categories',
+      payload.profile.vendors.indexOf('Kalimati') >= 0 && payload.profile.categories.indexOf('Petrol') >= 0);
+    c.sandbox.applyRemoteVendors({ profile: { vendors: ['Sharma'] } });
+    check('B17k remote vendors apply', c.sandbox.S.profile.vendors.join(',') === 'Sharma');
+    c.sandbox.applyRemoteCategories({ profile: { categories: ['Snacks'] } });
+    check('B17l remote categories apply', c.sandbox.S.profile.categories.join(',') === 'Snacks');
+
+    c.$('#f-desc').value = 'Test due';
+    c.$('#f-amount').value = '500';
+    c.$('#f-when').value = '2026-09-30T10:00';
+    c.$('#f-party').value = '';
+    c.$('#f-party-new').value = '';
+    c.$('#f-note').value = '';
+    c.sandbox.S.entryType = 'due_purchase';
+    const before = c.sandbox.S.entries.personal.length;
+    c.sandbox.handleEntrySubmit({ preventDefault() {} });
+    check('B17m debt entry needs a vendor',
+      c.sandbox.S.entries.personal.length === before && /vendor/i.test(c.$('#toast').textContent),
+      c.$('#toast').textContent);
+    c.$('#f-party').value = '__new';
+    c.$('#f-party-new').value = 'NewShop';
+    c.sandbox.handleEntrySubmit({ preventDefault() {} });
+    const added = c.sandbox.S.entries.personal[before];
+    check('B17n inline vendor created on save',
+      c.sandbox.S.entries.personal.length === before + 1 && added && added.party === 'NewShop' &&
+      c.sandbox.S.profile.vendors.indexOf('NewShop') >= 0,
+      added && added.party);
+    c.$('#f-party').value = '__new';
+    c.$('#f-party-new').value = 'newshop';
+    c.sandbox.handleEntrySubmit({ preventDefault() {} });
+    const added2 = c.sandbox.S.entries.personal[before + 1];
+    check('B17n2 new vendor reuses known spelling',
+      added2 && added2.party === 'NewShop' && c.sandbox.getVendors().length === 3,
+      added2 && added2.party + ' / ' + JSON.stringify(c.sandbox.getVendors()));
+
+    c.sandbox.addEntry({ ts: now, type: 'money_given', desc: 'Gave X', amount: 1000, party: 'Ramesh', note: '' });
+    c.sandbox.addEntry({ ts: now, type: 'received_back', desc: 'X returned part', amount: 500, party: 'Ramesh', note: '' });
+    c.sandbox.openVendorSheet('Ramesh');
+    const vhtml = c.$('#vendor-body').innerHTML;
+    check('B17o sheet shows pending', /Owes you/.test(vhtml) && /Rs 500/.test(vhtml), vhtml.slice(0, 200));
+    check('B17p sheet shows breakdown', /Gave/.test(vhtml) && /Got back/.test(vhtml));
+    c.sandbox.addEntry({ ts: now, type: 'received_back', desc: 'X returned rest', amount: 500, party: 'Ramesh', note: '' });
+    c.sandbox.openVendorSheet('Ramesh');
+    const vhtml2 = c.$('#vendor-body').innerHTML;
+    check('B17q sheet says paid back when settled',
+      /All settled/.test(vhtml2) && /paid you back in full/.test(vhtml2), vhtml2.slice(0, 200));
+
+    c.sandbox.setCurrency('USD');
+    c.sandbox.addEntry({ ts: now, type: 'cash_purchase', desc: 'Coffee', amount: 12.50, party: '', note: '' });
+    const usdEntry = c.sandbox.S.entries.personal[c.sandbox.S.entries.personal.length - 1];
+    check('B17r USD keeps decimals', usdEntry.amount === 12.5, String(usdEntry.amount));
+    c.sandbox.setCurrency('NPR');
+    c.sandbox.addEntry({ ts: now, type: 'cash_purchase', desc: 'Tea', amount: 12.50, party: '', note: '' });
+    const nprEntry = c.sandbox.S.entries.personal[c.sandbox.S.entries.personal.length - 1];
+    check('B17s NPR rounds whole', nprEntry.amount === 13, String(nprEntry.amount));
   }
 
   // B10d: the account modal shows an honest offline-readiness line
