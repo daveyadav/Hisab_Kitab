@@ -117,6 +117,7 @@ try { var t = localStorage.getItem('hisab_theme'); if (t === 'light' || t === 'd
       <section id="tab-dashboard" class="tab" hidden></section>
       <section id="tab-entries" class="tab" hidden></section>
       <section id="tab-balances" class="tab" hidden></section>
+      <section id="tab-vendors" class="tab" hidden></section>
       <section id="tab-more" class="tab" hidden></section>
     </main>
 
@@ -126,6 +127,7 @@ try { var t = localStorage.getItem('hisab_theme'); if (t === 'light' || t === 'd
       <button class="nav-btn" data-tab="dashboard"><span class="nav-ico"></span><span>Home</span></button>
       <button class="nav-btn" data-tab="entries"><span class="nav-ico"></span><span>Entries</span></button>
       <button class="nav-btn" data-tab="balances"><span class="nav-ico"></span><span>Balances</span></button>
+      <button class="nav-btn" data-tab="vendors"><span class="nav-ico"></span><span>Vendors</span></button>
       <button class="nav-btn" data-tab="more"><span class="nav-ico"></span><span>More</span></button>
     </nav>
   </section>
@@ -234,6 +236,26 @@ try { var t = localStorage.getItem('hisab_theme'); if (t === 'light' || t === 'd
         <button class="icon-btn" id="vendor-close" aria-label="Close" type="button"></button>
       </div>
       <div id="vendor-body"></div>
+    </div>
+  </div>
+
+  <!-- Add vendor -->
+  <div id="vendor-add-modal" class="modal" hidden>
+    <div class="sheet card narrow" role="dialog" aria-modal="true" aria-labelledby="va-title">
+      <div class="sheet-head">
+        <h2 id="va-title">Add vendor</h2>
+        <button class="icon-btn" id="va-close" aria-label="Close" type="button"></button>
+      </div>
+      <form id="va-form" class="form" autocomplete="off">
+        <label>Vendor name
+          <input id="va-name" type="text" maxlength="60" placeholder="e.g. Bhatbhateni" autocomplete="off">
+        </label>
+        <div class="form-actions">
+          <span class="spacer"></span>
+          <button type="button" class="btn ghost" id="va-cancel">Cancel</button>
+          <button type="submit" class="btn primary">Add vendor</button>
+        </div>
+      </form>
     </div>
   </div>
 

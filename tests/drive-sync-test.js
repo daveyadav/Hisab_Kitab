@@ -1105,7 +1105,7 @@ function drivePayloadFor(email, descs) {
     /* Log in a fake user so renders run. */
     c.sandbox.S.user = { kind: 'local', id: 't' };
     c.sandbox.S.entries = { personal: [], business: [] };
-    ['#confirm-modal', '#currency-modal', '#vendor-modal', '#entry-modal', '#report-modal', '#account-modal']
+    ['#confirm-modal', '#currency-modal', '#vendor-modal', '#vendor-add-modal', '#entry-modal', '#report-modal', '#account-modal']
       .forEach(sel => { c.$(sel).hidden = true; });
     const pressBack = () => {
       hist.entries.pop(); /* browser moves one entry back */
@@ -1145,7 +1145,7 @@ function drivePayloadFor(email, descs) {
     c.sandbox.S.user = { kind: 'local', id: 't' };
     c.sandbox.S.entries = { personal: [], business: [] };
     c.sandbox.goTab('entries');
-    ['#confirm-modal', '#currency-modal', '#vendor-modal', '#entry-modal', '#report-modal', '#account-modal']
+    ['#confirm-modal', '#currency-modal', '#vendor-modal', '#vendor-add-modal', '#entry-modal', '#report-modal', '#account-modal']
       .forEach(sel => { c.$(sel).hidden = true; });
     c.sandbox.openModal('#entry-modal');
     check('B14f sheet opened', c.$('#entry-modal').hidden === false);
@@ -1360,6 +1360,102 @@ function drivePayloadFor(email, descs) {
     const t3 = submit('received_back', 'Rita', 1000);
     check('B17v got-back settling a loan says so',
       /paid you back in full/.test(t3) && /all settled/.test(t3), t3);
+  }
+
+  // B17w–y: the vendor requirement applies to new entries only; entries
+  // created before vendors existed stay editable.
+  {
+    const c = makeContext();
+    c.sandbox.S.user = { kind: 'local', id: 't' };
+    c.sandbox.S.profile = { nickname: '', dismissedNudge: false, currency: 'NPR', vendors: [], categories: [] };
+    c.sandbox.S.entries = { personal: [], business: [] };
+    /* Old-format entry: a due purchase with no vendor, as created before the
+     * vendor feature existed. */
+    c.sandbox.addEntry({ ts: Date.now(), type: 'due_purchase', desc: 'Old due', amount: 2000, party: '', note: '' });
+    const old = c.sandbox.S.entries.personal[0];
+    c.sandbox.S.editingId = old.id;
+    c.$('#f-desc').value = 'Old due edited';
+    c.$('#f-amount').value = '2500';
+    c.$('#f-when').value = '2026-09-30T10:00';
+    c.$('#f-party').value = '';
+    c.$('#f-party-new').value = '';
+    c.$('#f-note').value = '';
+    c.sandbox.S.entryType = 'due_purchase';
+    c.sandbox.handleEntrySubmit({ preventDefault() {} });
+    check('B17w editing old vendor-less due entry saves',
+      c.sandbox.S.entries.personal.length === 1 &&
+      c.sandbox.S.entries.personal[0].amount === 2500 &&
+      /updated/.test(c.$('#toast').textContent),
+      c.$('#toast').textContent);
+    c.sandbox.S.editingId = null;
+
+    c.sandbox.S.entryType = 'due_purchase';
+    c.sandbox.rebuildPartyOptions('', true);
+    const newHtml = c.$('#f-party').innerHTML;
+    check('B17x new due entry offers choose-vendor placeholder',
+      /disabled/.test(newHtml) && /Choose vendor/.test(newHtml),
+      newHtml.slice(0, 140));
+    c.sandbox.rebuildPartyOptions('', false);
+    const editHtml = c.$('#f-party').innerHTML;
+    check('B17y edit mode offers none-option for vendor-less old entry',
+      /— None —/.test(editHtml) && !/disabled/.test(editHtml),
+      editHtml.slice(0, 140));
+  }
+
+  // B18: vendors tab — guarded delete.
+  {
+    const c = makeContext();
+    c.sandbox.S.user = { kind: 'local', id: 't' };
+    c.sandbox.S.profile = { nickname: '', dismissedNudge: false, currency: 'NPR', vendors: ['ShopA', 'ShopB', 'Loner'], categories: [] };
+    c.sandbox.S.entries = { personal: [], business: [] };
+    const now = Date.now();
+    c.sandbox.addEntry({ ts: now, type: 'due_purchase', desc: 'Due', amount: 2000, party: 'ShopA', note: '' });
+    c.sandbox.addEntry({ ts: now, type: 'money_given', desc: 'Gave', amount: 1000, party: 'ShopB', note: '' });
+    c.sandbox.addEntry({ ts: now, type: 'received_back', desc: 'Back', amount: 1000, party: 'ShopB', note: '' });
+
+    check('B18a pending blocks delete',
+      c.sandbox.vendorPending('ShopA') === 2000, String(c.sandbox.vendorPending('ShopA')));
+    c.sandbox.deleteVendor('ShopA');
+    check('B18b blocked delete keeps vendor and entries',
+      c.sandbox.S.profile.vendors.indexOf('ShopA') >= 0 &&
+      c.sandbox.S.entries.personal[0].party === 'ShopA' &&
+      /pending/.test(c.$('#toast').textContent),
+      c.$('#toast').textContent);
+
+    check('B18c settled vendor has no pending',
+      c.sandbox.vendorPending('ShopB') === 0, String(c.sandbox.vendorPending('ShopB')));
+    c.sandbox.doDeleteVendor('ShopB');
+    check('B18d settled delete removes vendor and unlinks entries',
+      c.sandbox.S.profile.vendors.indexOf('ShopB') < 0 &&
+      c.sandbox.S.entries.personal.every(function (e) { return e.party !== 'ShopB'; }),
+      JSON.stringify(c.sandbox.S.profile.vendors));
+
+    c.sandbox.doDeleteVendor('Loner');
+    check('B18e entry-less vendor deletes cleanly',
+      c.sandbox.S.profile.vendors.indexOf('Loner') < 0,
+      JSON.stringify(c.sandbox.S.profile.vendors));
+
+    c.sandbox.renderVendors();
+    const vhtml = c.$('#tab-vendors').innerHTML;
+    check('B18f vendors tab lists remaining vendors',
+      /ShopA/.test(vhtml) && !/ShopB/.test(vhtml) && !/Loner/.test(vhtml),
+      vhtml.slice(0, 200));
+  }
+
+  // B18g: vendor statement splits due-purchase and took-money rows.
+  {
+    const c = makeContext();
+    c.sandbox.S.user = { kind: 'local', id: 't' };
+    c.sandbox.S.profile = { nickname: '', dismissedNudge: false, currency: 'NPR', vendors: [], categories: [] };
+    c.sandbox.S.entries = { personal: [], business: [] };
+    const now = Date.now();
+    c.sandbox.addEntry({ ts: now, type: 'due_purchase', desc: 'Rice on due', amount: 2000, party: 'Sita', note: '' });
+    c.sandbox.addEntry({ ts: now, type: 'money_taken', desc: 'Took from Sita', amount: 500, party: 'Sita', note: '' });
+    c.sandbox.openVendorSheet('Sita');
+    const shtml = c.$('#vendor-body').innerHTML;
+    check('B18g statement shows separate due and took rows',
+      /Due purchase/.test(shtml) && />Took</.test(shtml) && !/Bought on due/.test(shtml),
+      shtml.slice(0, 300));
   }
 
   // B10d: the account modal shows an honest offline-readiness line

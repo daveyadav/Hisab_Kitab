@@ -297,7 +297,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
 @keyframes syncrot{to{transform:rotate(360deg)}}
 
 /* ================= layout ================= */
-.content{flex:1;width:100%;max-width:1120px;margin:0 auto;padding:18px 16px 140px}
+.content{flex:1;width:100%;max-width:1120px;margin:0 auto;padding:18px 16px 190px}
 .tab{display:flex;flex-direction:column;gap:14px}
 .tab.anim > *{animation:rise .55s var(--ease) both;animation-delay:calc(var(--i,0) * 45ms)}
 @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
@@ -446,7 +446,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
 .hl{background:var(--surface-2);border:1px solid var(--line-2);border-radius:14px;padding:12px;min-width:0}
 .hl .k{font-size:.7rem;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.05em}
 .hl .v{font-weight:800;font-size:1rem;margin-top:3px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hl .s{font-size:.74rem;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hl .s{font-size:.74rem;color:var(--ink-2);line-height:1.4}
 
 .nudge{display:flex;align-items:center;gap:12px;background:var(--gold-soft);border:1px solid color-mix(in srgb,var(--gold) 30%,transparent);border-radius:16px;padding:12px 14px}
 .nudge svg{width:22px;height:22px;color:var(--gold);flex:none}
@@ -554,7 +554,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
   bottom:20px;
   bottom:calc(20px + env(safe-area-inset-bottom, 0px));
   width:calc(100% - 24px);max-width:440px;
-  display:grid;grid-template-columns:repeat(4,1fr);
+  display:grid;grid-template-columns:repeat(5,1fr);
   background:var(--glass);backdrop-filter:saturate(1.6) blur(18px);-webkit-backdrop-filter:saturate(1.6) blur(18px);
   border:1px solid var(--glass-line);border-radius:24px;padding:6px;z-index:30;box-shadow:var(--shadow-lg);
 }
@@ -609,6 +609,8 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
 .type-btn .e-ico svg{width:18px;height:18px}
 .type-btn:hover{border-color:color-mix(in srgb,var(--c) 40%,var(--line))}
 .type-btn.active{border-color:var(--c);background:color-mix(in srgb,var(--c) 10%,var(--surface));color:var(--ink);transform:translateY(-1px);box-shadow:0 6px 16px -8px var(--c)}
+/* 7 types in a 3-column grid: the last one spans the row as a horizontal button. */
+.type-btn:last-child{grid-column:1/-1;flex-direction:row;min-height:56px;gap:10px}
 .amount-field{position:relative}
 .amount-field .cur{position:absolute;left:14px;bottom:13px;font-weight:800;color:var(--muted);font-size:1rem}
 .amount-field input{padding-left:44px;font-size:1.25rem;font-weight:800;font-variant-numeric:tabular-nums}
@@ -778,10 +780,27 @@ select.field{
 .currency-row .cur-check svg{width:20px;height:20px}
 .currency-row[aria-selected="true"] .cur-badge{background:var(--accent-soft);color:var(--accent)}
 
+/* ---- vendors tab ---- */
+.vendors-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:2px 4px 0}
+.vendors-head h3{font-size:1rem}
+.vendors-head p{margin:2px 0 0;font-size:.8rem;color:var(--muted)}
+.vendor-row{display:flex;align-items:center;gap:2px}
+.vendor-row + .vendor-row{border-top:1px solid var(--line-2)}
+.vendor-row .party-card{flex:1;min-width:0}
+.vendor-del{flex:none;color:var(--danger);border-color:var(--danger-soft)}
+.vendor-del:hover{background:var(--danger-soft)}
+.vendor-del svg{width:18px;height:18px}
+.vendor-del.locked{color:var(--muted);border-color:var(--line);opacity:.55}
+.vendor-del.locked:hover{background:var(--surface-2)}
+@media (max-width:520px){
+  .nav-btn{font-size:.62rem;min-height:52px;padding:7px 2px 5px}
+  .nav-btn .nav-ico{width:46px;height:26px}
+}
+
 /* ---- vendor statement ---- */
 .v-head{display:flex;gap:14px;align-items:center;margin-bottom:12px}
 .v-status{flex:1;display:flex;gap:20px;background:var(--surface-3);border-radius:14px;padding:12px 14px}
-.v-status>div{display:flex;flex-direction:column;gap:2px}
+.v-status>div{flex:1;display:flex;flex-direction:column;gap:2px}
 .v-status span{font-size:.78rem;color:var(--muted)}
 .v-status b{font-size:1.15rem}
 .v-status b.neg{color:var(--neg)} .v-status b.pos{color:var(--pos)}

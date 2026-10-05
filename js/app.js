@@ -27,7 +27,7 @@
 /* ---------------- constants ---------------- */
 var TZ = 'Asia/Kathmandu';
 /* App version shown in the More tab — bump together with the SW cache name. */
-var APP_VERSION = '28';
+var APP_VERSION = '29';
 /* Storage layout
  * Local accounts (per-device):
  *  hisab_accounts_v2            = { lowercasedName: {name, salt, algo, passHash, createdAt} }
@@ -65,7 +65,7 @@ function profileKeyFor(storeKey) { return 'hisab_profile_v1_' + storeKey; }
  * its colour everywhere: list icons, filters, charts.                     */
 var TYPES = {
   cash_purchase:  { label: 'Cash purchase',  short: 'Cash',      partyLabel: 'Shop / vendor (optional)', flow: 'cash',        icon: 'cart',    color: 't1' },
-  due_purchase:   { label: 'Bought on due',  short: 'On due',    partyLabel: 'Shop / vendor',            flow: 'payable+',    icon: 'receipt', color: 't2' },
+  due_purchase:   { label: 'Due purchase',  short: 'On due',    partyLabel: 'Shop / vendor',            flow: 'payable+',    icon: 'receipt', color: 't2' },
   money_given:    { label: 'Gave money',     short: 'Gave',      partyLabel: 'Person',                   flow: 'receivable+', icon: 'up',      color: 't3' },
   money_taken:    { label: 'Took money',     short: 'Took',      partyLabel: 'Person',                   flow: 'payable+',    icon: 'down',    color: 't4' },
   paid_back:      { label: 'I paid back',    short: 'Paid back', partyLabel: 'Person / vendor',          flow: 'payable-',    icon: 'check',   color: 't5' },
@@ -285,11 +285,11 @@ var CURRENCIES = [
   { code: 'QAR', name: 'Qatari Riyal',       symbol: 'QR',  locale: 'en-QA', dec: 2, gap: true  },
   { code: 'KWD', name: 'Kuwaiti Dinar',      symbol: 'KD',  locale: 'en-KW', dec: 2, gap: true  },
   { code: 'BHD', name: 'Bahraini Dinar',     symbol: 'BD',  locale: 'en-BH', dec: 2, gap: true  },
-  { code: 'PKR', name: 'Pakistani Rupee',    symbol: 'Rs',  locale: 'en-PK', dec: 0, gap: true  },
-  { code: 'BDT', name: 'Bangladeshi Taka',   symbol: '৳',   locale: 'en-BD', dec: 0, gap: false },
-  { code: 'LKR', name: 'Sri Lankan Rupee',   symbol: 'Rs',  locale: 'en-LK', dec: 0, gap: true  },
+  { code: 'PKR', name: 'Pakistani Rupee',    symbol: 'Rs',  locale: 'en-IN', dec: 0, gap: true  },
+  { code: 'BDT', name: 'Bangladeshi Taka',   symbol: '৳',   locale: 'en-IN', dec: 0, gap: false },
+  { code: 'LKR', name: 'Sri Lankan Rupee',   symbol: 'Rs',  locale: 'en-IN', dec: 0, gap: true  },
   { code: 'MVR', name: 'Maldivian Rufiyaa',  symbol: 'Rf',  locale: 'en-MV', dec: 2, gap: true  },
-  { code: 'BTN', name: 'Bhutanese Ngultrum', symbol: 'Nu',  locale: 'en-BT', dec: 0, gap: true  },
+  { code: 'BTN', name: 'Bhutanese Ngultrum', symbol: 'Nu',  locale: 'en-IN', dec: 0, gap: true  },
   { code: 'PHP', name: 'Philippine Peso',    symbol: '₱',   locale: 'en-PH', dec: 2, gap: false },
   { code: 'IDR', name: 'Indonesian Rupiah',  symbol: 'Rp',  locale: 'en-ID', dec: 0, gap: true  },
   { code: 'VND', name: 'Vietnamese Dong',    symbol: '₫',   locale: 'en-VN', dec: 0, gap: false },
@@ -437,6 +437,64 @@ function canonicalVendor(name) {
 /* Debt-type entries must name who the money is with — otherwise the
  * Balances tab can't track what's pending. */
 var PARTY_REQUIRED = { due_purchase: 1, money_given: 1, money_taken: 1, paid_back: 1, received_back: 1 };
+
+/* ---------------- vendor management ----------------
+ * Totals across BOTH portals (a vendor can be settled in Personal but
+ * still owe in Business). Names match case-insensitively. */
+function vendorTotals(name) {
+  var l = String(name || '').toLowerCase(), t = { payable: 0, receivable: 0, count: 0 };
+  ['personal', 'business'].forEach(function (portal) {
+    (S.entries[portal] || []).forEach(function (e) {
+      if (String(e.party || '').toLowerCase() !== l) return;
+      t.count++;
+      var f = TYPES[e.type] ? TYPES[e.type].flow : 'cash';
+      if (f === 'payable+') t.payable += e.amount;
+      else if (f === 'payable-') t.payable -= e.amount;
+      else if (f === 'receivable+') t.receivable += e.amount;
+      else if (f === 'receivable-') t.receivable -= e.amount;
+    });
+  });
+  return t;
+}
+/* Outstanding amount blocking deletion, or 0 when the vendor is clear. */
+function vendorPending(name) {
+  var t = vendorTotals(name);
+  return Math.max(0, t.payable) + Math.max(0, t.receivable);
+}
+/* Actually remove the vendor: drop from the managed list and unlink their
+ * entries (the entries stay in the khata as plain records). */
+function doDeleteVendor(name) {
+  var l = String(name || '').toLowerCase();
+  S.profile.vendors = (S.profile.vendors || []).filter(function (v) { return String(v).toLowerCase() !== l; });
+  ['personal', 'business'].forEach(function (portal) {
+    (S.entries[portal] || []).forEach(function (e) {
+      if (String(e.party || '').toLowerCase() === l) e.party = '';
+    });
+  });
+  saveProfile();
+  saveJSON(dataKey(), S.entries);
+  queueDriveSave();
+}
+/* Guarded delete: vendors with pending money can't be removed. */
+function deleteVendor(name) {
+  name = canonicalVendor(name) || String(name || '').trim();
+  if (!name) return;
+  var pending = vendorPending(name);
+  if (pending > 0) {
+    toast('Clear ' + fmtMoney(pending) + ' with ' + name + ' first — vendors with pending amounts can\'t be deleted.');
+    return;
+  }
+  var n = vendorTotals(name).count;
+  confirmDlg('Delete vendor',
+    n ? 'Delete ' + name + '? Their ' + n + ' entr' + (n === 1 ? 'y' : 'ies') +
+          ' stay' + (n === 1 ? 's' : '') + ' in your khata, unlinked from the vendor.'
+      : 'Delete ' + name + '?',
+    'Delete', function () {
+      doDeleteVendor(name);
+      renderAll(false);
+      toast(name + ' deleted.');
+    });
+}
 /* Category applies to purchases and income — "what was this for". */
 var CATEGORY_TYPES = { cash_purchase: 1, due_purchase: 1, income: 1 };
 function fmtNum(n) { return Math.round(Number(n) || 0).toLocaleString('en-IN'); }
@@ -669,9 +727,21 @@ function boot() {
   $('#currency-close').addEventListener('click', function () { closeModal('#currency-modal'); });
   $('#vendor-close').innerHTML = icon('x');
   $('#vendor-close').addEventListener('click', function () { closeModal('#vendor-modal'); });
+  $('#va-close').innerHTML = icon('x');
+  $('#va-close').addEventListener('click', closeVendorAdd);
+  $('#va-cancel').addEventListener('click', closeVendorAdd);
+  $('#va-form').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var name = $('#va-name').value.trim();
+    if (!name) { toast('Type a vendor name.'); return; }
+    if (!addVendor(name)) { toast(canonicalVendor(name) + ' is already in your vendors.'); return; }
+    closeVendorAdd();
+    renderAll(false);
+    toast(name + ' added to vendors.');
+  });
   $('#currency-search').addEventListener('input', function (ev) { renderCurrencyList(ev.target.value); });
   populateCurrencySelect();
-  var navIcons = { dashboard: 'chart', entries: 'list', balances: 'swap', more: 'dots' };
+  var navIcons = { dashboard: 'chart', entries: 'list', balances: 'swap', vendors: 'users', more: 'dots' };
   $all('.nav-btn').forEach(function (b) {
     $('.nav-ico', b).innerHTML = icon(navIcons[b.dataset.tab]);
   });
@@ -1611,10 +1681,11 @@ function renderAll(animate) {
   if (!S.user) return;
   renderHeader();
   $all('.nav-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === S.tab); });
-  ['dashboard', 'entries', 'balances', 'more'].forEach(function (t) { $('#tab-' + t).hidden = (t !== S.tab); });
+  ['dashboard', 'entries', 'balances', 'vendors', 'more'].forEach(function (t) { $('#tab-' + t).hidden = (t !== S.tab); });
   if (S.tab === 'dashboard') renderDashboard();
   else if (S.tab === 'entries') renderEntries();
   else if (S.tab === 'balances') renderBalances();
+  else if (S.tab === 'vendors') renderVendors();
   else renderMore();
   var fab = $('#fab');
   if (fab) fab.hidden = (S.tab === 'more');
@@ -1636,7 +1707,7 @@ function goTab(t) {
 }
 /* Close the topmost open layer. Returns true when one was open. */
 function closeTopmostLayer() {
-  var sels = ['#confirm-modal', '#currency-modal', '#vendor-modal', '#entry-modal', '#report-modal', '#account-modal'];
+  var sels = ['#confirm-modal', '#currency-modal', '#vendor-modal', '#vendor-add-modal', '#entry-modal', '#report-modal', '#account-modal'];
   for (var i = 0; i < sels.length; i++) {
     var m = $(sels[i]);
     if (m && !m.hidden) {
@@ -1772,7 +1843,7 @@ function renderDashboard() {
       (net.owe ? '<i style="width:' + owePct + '%;background:var(--neg)"></i>' : '') +
       (net.owed ? '<i style="width:' + (100 - owePct) + '%;background:var(--pos);animation-delay:.15s"></i>' : '') + '</div>'
       : '<div class="split"></div>') +
-    '<div class="net-line"><span>' + (netPos === 0 ? 'All square' : netPos > 0 ? 'Net, others owe you' : 'Net, you owe others') + '</span><b data-count="' + netPos + '" data-fmt="signed">' + (netPos > 0 ? '+' : '') + fmtMoney(netPos) + '</b></div></div>';
+    '<div class="net-line"><span>' + (netPos === 0 ? 'All square' : netPos > 0 ? 'Net \u2014 others owe you' : 'Net \u2014 you owe others') + '</span><b data-count="' + netPos + '" data-fmt="signed">' + (netPos > 0 ? '+' : '') + fmtMoney(netPos) + '</b></div></div>';
 
   /* KPI tiles */
   function kpi(label, ico, color, value, fmt, delta) {
@@ -1975,13 +2046,13 @@ function renderBalances() {
       '<span class="bal ' + cls + '">' + fmtMoney(amount) + '</span>' + icon('chev', 'chev') + '</button>';
   }
 
-  var html = '<div class="panel position"><div class="panel-head"><div><h3>' + esc(portalName()) + ' balances</h3><p>Everyone you have open accounts with</p></div>' +
+  var html = '<div class="panel position"><div class="panel-head"><div><h3>' + esc(portalName()) + ' balances</h3><p>Everyone with an open balance</p></div>' +
       (list.length ? '<button class="link-btn" id="balances-print" type="button">' + icon('printer') + 'Print</button>' : '') + '</div>' +
-      '<div class="nums"><div><div class="k">I owe · total</div><div class="v neg" data-count="' + totOwe + '">' + fmtMoney(totOwe) + '</div></div>' +
-      '<div style="text-align:right"><div class="k">Owed to me · total</div><div class="v pos" data-count="' + totOwed + '">' + fmtMoney(totOwed) + '</div></div></div>' +
+      '<div class="nums"><div><div class="k">Total I owe</div><div class="v neg" data-count="' + totOwe + '">' + fmtMoney(totOwe) + '</div></div>' +
+      '<div style="text-align:right"><div class="k">Total owed to me</div><div class="v pos" data-count="' + totOwed + '">' + fmtMoney(totOwed) + '</div></div></div>' +
       '<div class="split">' + (totOwe ? '<i style="width:' + owePct + '%;background:var(--neg)"></i>' : '') +
       (totOwed ? '<i style="width:' + (100 - owePct) + '%;background:var(--pos);animation-delay:.15s"></i>' : '') + '</div>' +
-      '<div class="net-line"><span>' + (netPos === 0 ? 'All square' : netPos > 0 ? 'Net, others owe you' : 'Net, you owe others') + '</span><b>' + (netPos > 0 ? '+' : '') + fmtMoney(netPos) + '</b></div></div>' +
+      '<div class="net-line"><span>' + (netPos === 0 ? 'All square' : netPos > 0 ? 'Net \u2014 others owe you' : 'Net \u2014 you owe others') + '</span><b>' + (netPos > 0 ? '+' : '') + fmtMoney(netPos) + '</b></div></div>' +
     '<div class="section-title">I owe · payables</div>' +
     (oweList.length ? '<div class="list-card">' + oweList.map(function (p) { return partyCard(p, p.payable, 'owe'); }).join('') + '</div>'
                    : '<div class="card empty"><div class="em-ico">' + icon('check') + '</div><p><b>All clear</b></p><p>Nobody to pay right now.</p></div>') +
@@ -1999,21 +2070,69 @@ function renderBalances() {
   countUp(root);
 }
 
+/* ---- vendors tab ----
+ * Every vendor in one place: balance status, statement on tap, and delete
+ * (only when nothing is pending with them). */
+function renderVendors() {
+  var vendors = getVendors();
+
+  function row(v) {
+    var t = vendorTotals(v);
+    var pending = Math.max(0, t.payable) + Math.max(0, t.receivable);
+    var bal, cls, sub;
+    if (t.payable > 0) { bal = fmtMoney(t.payable); cls = 'owe'; sub = 'You owe · '; }
+    else if (t.receivable > 0) { bal = fmtMoney(t.receivable); cls = 'owed'; sub = 'Owes you · '; }
+    else { bal = 'Settled ✓'; cls = ''; sub = ''; }
+    sub += t.count ? t.count + ' entr' + (t.count === 1 ? 'y' : 'ies') : 'no entries yet';
+    return '<div class="vendor-row">' +
+      '<button class="party-card vendor-card" data-party="' + esc(v) + '">' + avatarHTML(v) +
+      '<span class="e-main"><span class="e-desc">' + esc(v) + '</span>' +
+      '<span class="e-sub">' + esc(sub) + '</span></span>' +
+      '<span class="bal ' + cls + '">' + esc(bal) + '</span>' + icon('chev', 'chev') + '</button>' +
+      '<button class="icon-btn vendor-del' + (pending > 0 ? ' locked' : '') + '" data-party="' + esc(v) + '"' +
+      ' aria-label="Delete ' + esc(v) + '" title="Delete ' + esc(v) + '" type="button">' + icon('trash') + '</button></div>';
+  }
+
+  var html = '<div class="panel-head vendors-head"><div><h3>Vendors</h3><p>Everyone you deal with · tap a row for the full statement</p></div>' +
+    '<button class="btn small primary" id="vendors-add" type="button">' + icon('plus') + 'Add</button></div>' +
+    (vendors.length
+      ? '<div class="list-card">' + vendors.map(row).join('') + '</div>'
+      : '<div class="card empty"><div class="em-ico">' + icon('users') + '</div><p><b>No vendors yet</b></p>' +
+        '<p>Vendors you add — or name in an entry — will appear here.</p></div>');
+
+  var root = $('#tab-vendors');
+  root.innerHTML = html;
+  $('#vendors-add').addEventListener('click', openVendorAdd);
+  $all('#tab-vendors .vendor-card').forEach(function (c) {
+    c.addEventListener('click', function () { openVendorSheet(c.dataset.party); });
+  });
+  $all('#tab-vendors .vendor-del').forEach(function (b) {
+    b.addEventListener('click', function (ev) { ev.stopPropagation(); deleteVendor(b.dataset.party); });
+  });
+}
+
+/* ---- add-vendor sheet ---- */
+function openVendorAdd() {
+  $('#va-name').value = '';
+  openModal('#vendor-add-modal');
+}
+function closeVendorAdd() { closeModal('#vendor-add-modal'); }
+
 /* ---- vendor statement ----
  * Tap a party card in Balances → a sheet with what's pending with this
  * vendor, the give/get breakdown, and every entry with them. */
 function openVendorSheet(party) {
   var list = portalEntries().filter(function (e) { return e.party === party; })
     .sort(function (a, b) { return b.ts - a.ts; });
-  var t = { due: 0, paid: 0, gave: 0, got: 0 };
+  var t = { due: 0, took: 0, paid: 0, gave: 0, got: 0 };
   list.forEach(function (e) {
-    var f = TYPES[e.type] ? TYPES[e.type].flow : 'cash';
-    if (f === 'payable+') t.due += e.amount;
-    else if (f === 'payable-') t.paid += e.amount;
-    else if (f === 'receivable+') t.gave += e.amount;
-    else if (f === 'receivable-') t.got += e.amount;
+    if (e.type === 'due_purchase') t.due += e.amount;
+    else if (e.type === 'money_taken') t.took += e.amount;
+    else if (e.type === 'paid_back') t.paid += e.amount;
+    else if (e.type === 'money_given') t.gave += e.amount;
+    else if (e.type === 'received_back') t.got += e.amount;
   });
-  var payable = t.due - t.paid, receivable = t.gave - t.got;
+  var payable = t.due + t.took - t.paid, receivable = t.gave - t.got;
   $('#vendor-title').textContent = party;
 
   var banner;
@@ -2024,7 +2143,7 @@ function openVendorSheet(party) {
       '</div>';
   } else {
     var note;
-    if (t.due > 0 && t.paid >= t.due) note = 'You\u2019ve paid them back in full ✓';
+    if ((t.due + t.took) > 0 && t.paid >= t.due + t.took) note = 'You\u2019ve paid them back in full ✓';
     else if (t.gave > 0 && t.got >= t.gave) note = 'They\u2019ve paid you back in full ✓';
     else note = 'No pending amount.';
     banner = '<div class="v-status settled"><b>All settled ✓</b><span>' + esc(note) + '</span></div>';
@@ -2033,7 +2152,8 @@ function openVendorSheet(party) {
     return '<div class="v-row"><span>' + k + '</span><b>' + fmtMoney(v) + '</b></div>';
   }
   var rows = '';
-  if (t.due) rows += vrow('Bought on due', t.due);
+  if (t.due) rows += vrow('Due purchase', t.due);
+  if (t.took) rows += vrow('Took', t.took);
   if (t.paid) rows += vrow('Paid back', t.paid);
   if (t.gave) rows += vrow('Gave', t.gave);
   if (t.got) rows += vrow('Got back', t.got);
@@ -2087,7 +2207,7 @@ function renderMore() {
 
     '<div class="section-title">Data</div><div class="card menu-card">' +
       '<button class="menu-item" id="m-sample"><span class="mi">' + icon('sparkle') + '</span><span>Load sample entries<span class="sub">Try the app with example data</span></span>' + icon('chev', 'chev') + '</button>' +
-      '<button class="menu-item danger-item" id="m-clear"><span class="mi">' + icon('trash') + '</span><span>Clear this portal\'s entries<span class="sub">Deletes all ' + portalName() + ' entries of this account</span></span></button>' +
+      '<button class="menu-item danger-item" id="m-clear"><span class="mi">' + icon('trash') + '</span><span>Clear ' + portalName() + ' entries<span class="sub">Deletes all ' + portalName() + ' entries of this account</span></span></button>' +
       '<button class="menu-item" id="m-logout"><span class="mi">' + icon('logout') + '</span><span>Log out<span class="sub">Switch to another account</span></span></button>' +
     '</div>' +
 
@@ -2416,7 +2536,7 @@ function buildReportHTML(o, r) {
       html += '<p class="rp-empty">' + (o.party ? esc(o.party) + ' is settled' : 'Everyone is settled') + ' — nothing owed either way.</p>';
     } else {
       html += '<div class="rp-bal">' + balTable('I owe · payables', owe, 'payable', totOwe) + balTable('Owed to me · receivables', owed, 'receivable', totOwed) + '</div>' +
-        '<p class="rp-net"><span>' + (net === 0 ? 'All square' : net > 0 ? 'Net, others owe you' : 'Net, you owe others') + '</span><b>' + fmtMoney(Math.abs(net)) + '</b></p>';
+        '<p class="rp-net"><span>' + (net === 0 ? 'All square' : net > 0 ? 'Net \u2014 others owe you' : 'Net \u2014 you owe others') + '</span><b>' + fmtMoney(Math.abs(net)) + '</b></p>';
     }
     html += '</section>';
   }
@@ -2557,7 +2677,7 @@ function openEntryModal(id) {
   $('#f-when').value = e ? inputValueFromTs(e.ts) : inputNow();
   $('#f-note').value = e && e.note !== 'sample' ? e.note : '';
   var pni = $('#f-party-new'); if (pni) { pni.value = ''; }
-  rebuildPartyOptions(e ? e.party : '');
+  rebuildPartyOptions(e ? e.party : '', !e);
   var cni = $('#f-category-new'); if (cni) { cni.value = ''; }
   rebuildCategoryOptions(e ? (e.category || '') : '');
   /* Amount field follows the account's currency (symbol + decimals). */
@@ -2589,18 +2709,33 @@ function renderTypeGrid() {
   });
 }
 function updatePartyLabel() {
-  $('#f-party-label').textContent = TYPES[S.entryType].partyLabel;
-  /* Vendor is mandatory for debt entries (due / gave / took / paid back /
-   * got back) so pending amounts stay trackable; optional otherwise. */
+  /* A vendor is mandatory for NEW debt entries (due / gave / took / paid
+   * back / got back) so pending amounts stay trackable; optional otherwise.
+   * Edits never force a vendor, so entries from before vendors existed stay
+   * saveable. */
+  var isNew = !S.editingId;
+  var base = TYPES[S.entryType].partyLabel;
+  var lab = $('#f-party-label');
+  if (lab) lab.textContent = (PARTY_REQUIRED[S.entryType] && isNew) ? base + ' (required)' : base;
   var sel = $('#f-party');
-  rebuildPartyOptions(sel ? sel.value : '');
+  rebuildPartyOptions(sel ? sel.value : '', isNew);
   var wrap = $('#f-category-wrap');
   if (wrap) wrap.hidden = !CATEGORY_TYPES[S.entryType];
 }
-function rebuildPartyOptions(selected) {
+/* Rebuild the party <select> options: known vendors + inline-create entry.
+ * New debt-type entries must pick a vendor: the first option is a disabled
+ * "— Choose vendor —" placeholder so nothing is silently preselected.
+ * Edits always offer "— None —" so entries created before vendors existed
+ * stay saveable. */
+function rebuildPartyOptions(selected, isNew) {
   var sel = $('#f-party');
   if (!sel) return;
-  var html = PARTY_REQUIRED[S.entryType] ? '' : '<option value="">— None —</option>';
+  var html;
+  if (isNew && PARTY_REQUIRED[S.entryType]) {
+    html = '<option value="" disabled' + (!selected ? ' selected' : '') + '>— Choose vendor —</option>';
+  } else {
+    html = '<option value="">— None —</option>';
+  }
   getVendors().forEach(function (v) {
     html += '<option value="' + esc(v) + '"' + (v === selected ? ' selected' : '') + '>' + esc(v) + '</option>';
   });
@@ -2639,7 +2774,9 @@ function handleEntrySubmit(ev) {
       else addVendor(party);
     }
   }
-  if (PARTY_REQUIRED[S.entryType] && !party) { toast('Choose a vendor for this entry.'); return; }
+  /* New debt entries must name a vendor. Edits skip this so entries created
+   * before vendors existed stay saveable. */
+  if (!S.editingId && PARTY_REQUIRED[S.entryType] && !party) { toast('Choose a vendor for this entry.'); return; }
   var category = '';
   if (CATEGORY_TYPES[S.entryType]) {
     var catSel = $('#f-category');
