@@ -1330,6 +1330,38 @@ function drivePayloadFor(email, descs) {
     check('B17s NPR rounds whole', nprEntry.amount === 13, String(nprEntry.amount));
   }
 
+  // B17t–v: settling a vendor says so at save time.
+  {
+    const c = makeContext();
+    c.sandbox.S.user = { kind: 'local', id: 't' };
+    c.sandbox.S.profile = { nickname: '', dismissedNudge: false, currency: 'NPR', vendors: [], categories: [] };
+    c.sandbox.S.entries = { personal: [], business: [] };
+    const now = Date.now();
+    function submit(type, party, amount) {
+      c.$('#f-desc').value = 'x';
+      c.$('#f-amount').value = String(amount);
+      c.$('#f-when').value = '2026-09-30T10:00';
+      c.$('#f-party').value = party;
+      c.$('#f-party-new').value = '';
+      c.$('#f-note').value = '';
+      c.sandbox.S.entryType = type;
+      c.sandbox.handleEntrySubmit({ preventDefault() {} });
+      return c.$('#toast').textContent;
+    }
+    submit('due_purchase', 'ShopA', 2000);
+    const t1 = submit('paid_back', 'ShopA', 2000);
+    check('B17t pay-back settling a due says so',
+      /paid .* back in full/.test(t1) && /all settled/.test(t1), t1);
+    submit('due_purchase', 'ShopB', 2000);
+    const t2 = submit('paid_back', 'ShopB', 500);
+    check('B17u partial pay-back keeps the normal toast',
+      /^Saved/.test(t2) && !/all settled/.test(t2), t2);
+    submit('money_given', 'Rita', 1000);
+    const t3 = submit('received_back', 'Rita', 1000);
+    check('B17v got-back settling a loan says so',
+      /paid you back in full/.test(t3) && /all settled/.test(t3), t3);
+  }
+
   // B10d: the account modal shows an honest offline-readiness line
   {
     const c = makeContext();

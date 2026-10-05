@@ -27,7 +27,7 @@
 /* ---------------- constants ---------------- */
 var TZ = 'Asia/Kathmandu';
 /* App version shown in the More tab — bump together with the SW cache name. */
-var APP_VERSION = '27';
+var APP_VERSION = '28';
 /* Storage layout
  * Local accounts (per-device):
  *  hisab_accounts_v2            = { lowercasedName: {name, salt, algo, passHash, createdAt} }
@@ -2656,9 +2656,32 @@ function handleEntrySubmit(ev) {
     party: party, note: $('#f-note').value.trim(), category: category
   };
   if (S.editingId) { updateEntry(S.editingId, data); toast('Entry updated.'); }
-  else { addEntry(data); toast('Saved — ' + fmtMoney(data.amount) + '.'); }
+  else {
+    addEntry(data);
+    toast(settleToastFor(data) || ('Saved — ' + fmtMoney(data.amount) + '.'));
+  }
   closeEntryModal();
   renderAll(false);
+}
+/* When a pay-back clears a vendor fully, say so at save time:
+ * "Ramesh paid you back in full ✓ — all settled." */
+function settleToastFor(data) {
+  if (!data.party) return null;
+  var f = TYPES[data.type] ? TYPES[data.type].flow : 'cash';
+  if (f !== 'payable-' && f !== 'receivable-') return null;
+  var b = { payable: 0, receivable: 0 }, hadDebt = false;
+  portalEntries().forEach(function (e) {
+    if (e.party !== data.party) return;
+    var ef = TYPES[e.type] ? TYPES[e.type].flow : 'cash';
+    if (ef === 'payable+') { b.payable += e.amount; hadDebt = true; }
+    else if (ef === 'payable-') b.payable -= e.amount;
+    else if (ef === 'receivable+') { b.receivable += e.amount; hadDebt = true; }
+    else if (ef === 'receivable-') b.receivable -= e.amount;
+  });
+  if (!hadDebt || b.payable > 0 || b.receivable > 0) return null;
+  return f === 'receivable-'
+    ? data.party + ' paid you back in full \u2713 — all settled.'
+    : 'You\u2019ve paid ' + data.party + ' back in full \u2713 — all settled.';
 }
 
 /* ---------------- init & wiring ---------------- */
