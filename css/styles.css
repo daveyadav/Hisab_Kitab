@@ -580,6 +580,12 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
 .fab:hover{transform:translateY(-2px) rotate(90deg);box-shadow:0 16px 32px -8px rgba(11,125,101,.7)}
 .fab:active{transform:scale(.92)}
 .fab svg{width:28px;height:28px;transition:transform .3s var(--ease)}
+/* Wide screens: the content column is capped at 1120px and centered, so dock
+ * the FAB in the right margin, just outside the content — it never covers
+ * list rows there. Narrower screens keep the floating overlay behavior. */
+@media (min-width:1180px){
+  .fab{right:calc(50% - 560px + 28px)}
+}
 
 /* ================= modal sheet ================= */
 .modal{position:fixed;inset:0;z-index:50;display:flex;align-items:flex-end;justify-content:center;

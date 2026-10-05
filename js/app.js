@@ -27,7 +27,7 @@
 /* ---------------- constants ---------------- */
 var TZ = 'Asia/Kathmandu';
 /* App version shown in the More tab — bump together with the SW cache name. */
-var APP_VERSION = '30';
+var APP_VERSION = '31';
 /* Storage layout
  * Local accounts (per-device):
  *  hisab_accounts_v2            = { lowercasedName: {name, salt, algo, passHash, createdAt} }
