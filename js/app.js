@@ -27,7 +27,7 @@
 /* ---------------- constants ---------------- */
 var TZ = 'Asia/Kathmandu';
 /* App version shown in the More tab — bump together with the SW cache name. */
-var APP_VERSION = '31';
+var APP_VERSION = '32';
 /* Storage layout
  * Local accounts (per-device):
  *  hisab_accounts_v2            = { lowercasedName: {name, salt, algo, passHash, createdAt} }
@@ -1687,8 +1687,9 @@ function renderAll(animate) {
   else if (S.tab === 'balances') renderBalances();
   else if (S.tab === 'vendors') renderVendors();
   else renderMore();
+  /* The + button lives in one fixed spot on every tab. */
   var fab = $('#fab');
-  if (fab) fab.hidden = (S.tab === 'more');
+  if (fab) fab.hidden = false;
   if (animate) staggerIn($('#tab-' + S.tab));
 }
 
