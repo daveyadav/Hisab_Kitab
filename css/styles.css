@@ -784,13 +784,14 @@ select.field{
 .vendors-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:2px 4px 0}
 .vendors-head h3{font-size:1rem}
 .vendors-head p{margin:2px 0 0;font-size:.8rem;color:var(--muted)}
-.vendor-row{display:flex;align-items:center;gap:2px}
+.vendor-row{display:flex;align-items:center;gap:8px;padding:5px 14px 5px 0}
 .vendor-row + .vendor-row{border-top:1px solid var(--line-2)}
-.vendor-row .party-card{flex:1;min-width:0}
-.vendor-del{flex:none;color:var(--danger);border-color:var(--danger-soft)}
+.vendor-row .party-card{flex:1;min-width:0;padding-top:11px;padding-bottom:11px}
+.vendor-del{flex:none;width:44px;height:44px;border-radius:13px;border:0;background:none;color:var(--danger);cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;transition:background-color .2s,transform .15s var(--ease)}
 .vendor-del:hover{background:var(--danger-soft)}
-.vendor-del svg{width:18px;height:18px}
-.vendor-del.locked{color:var(--muted);border-color:var(--line);opacity:.55}
+.vendor-del:active{transform:scale(.92)}
+.vendor-del svg{width:19px;height:19px}
+.vendor-del.locked{color:var(--muted);opacity:.45}
 .vendor-del.locked:hover{background:var(--surface-2)}
 @media (max-width:520px){
   .nav-btn{font-size:.62rem;min-height:52px;padding:7px 2px 5px}
